@@ -1,0 +1,7 @@
+test.fa
+.venv
+uv.lock
+
+.DS_Store
+
+sources.md
