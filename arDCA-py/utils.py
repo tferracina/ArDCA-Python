@@ -31,8 +31,7 @@ def read_fasta_alignment(filename: str, max_gap_fraction: float) -> np.ndarray:
             filtered_seqs.append(record)
 
     if not filtered_seqs:
-        raise ValueError("No sequences passed the gap filter (max_gap_fraction)={max_gap_fraction})")
-       
+        raise ValueError("No sequences passed gap filter (max_gap_fraction)={max_gap_fraction})")
     # Create numerical matrix (sequences as columns)
     seq_length = alignment.get_alignment_length()
     num_seqs = len(filtered_seqs)
@@ -46,6 +45,20 @@ def read_fasta_alignment(filename: str, max_gap_fraction: float) -> np.ndarray:
 
     return matrix
 
+def remove_duplicate_sequences(matrix: np.ndarray) -> np.ndarray:
+    """Remove duplicate columns"""
+    matrixt = matrix.T
 
-#def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: bool):
-    #"""Read FASTA file"""
+    _, unique_indices = np.unique(matrixt.view('i1').reshape(matrixt.shape[0], -1),
+                                  axis=0, return_index=True)
+    unique_indices.sort()
+
+    return matrix[:, unique_indices]
+
+
+def read_fasta(filename: str, max_gap_fraction: float, remove_dups: bool): #add theta: Any
+    """Read FASTA file"""
+
+    Z = read_fasta_alignment(filename, max_gap_fraction)
+    if remove_dups:
+        Z = remove_duplicate_sequences(Z)
