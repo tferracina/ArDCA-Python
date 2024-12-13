@@ -1,5 +1,6 @@
 import numpy as np
 from Bio import AlignIO
+from typing import Any, Tuple
 
 def aa_to_num(aa: str) -> np.int8:
     """String to number, return 21 for gaps and unrecognized capital letters"""
@@ -55,10 +56,48 @@ def remove_duplicate_sequences(matrix: np.ndarray) -> np.ndarray:
 
     return matrix[:, unique_indices]
 
+def hamming_distance_matrix(Z: np.ndarray) -> np.ndarray:
+    return np.sum(Z[:, None, :] != Z[None, :, :], axis=-1)
 
-def read_fasta(filename: str, max_gap_fraction: float, remove_dups: bool): #add theta: Any
+def compute_weights(Z: np.ndarray, max_val: int = None, theta: Union[float, str] = None) -> Tuple[np.ndarray, float]:
+    """Compute the reweighting vector. Retruns vector and its sum, # of "effective" sequence
+    Z: MSA Matrix (NxM)
+    max_val: Maximum value in the alphabet
+    theta: Distance threshold
+    """
+    seq_len, seq_num = Z.shape
+    
+
+    if q is None:
+        q = Z.max()
+
+    if not isinstance(theta, (int, float)):
+        raise ValueError("theta must be int/float")
+
+    if theta == 0:
+        return np.ones(seq_num), float(seq_num)
+
+    # Compute distance and weights
+    thresh = np.floor(theta * seq_len)
+    distances = hamming_distance_matrix(Z.T)
+    similar_counts = np.sum(distances < thresh, axis=1)
+    W = 1.0 / similar_counts
+    Meff = np.sum(W)
+
+    return W, Meff
+        
+    
+
+
+def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: bool): #add theta: Any
     """Read FASTA file"""
 
     Z = read_fasta_alignment(filename, max_gap_fraction)
     if remove_dups:
         Z = remove_duplicate_sequences(Z)
+
+    seq_len, seq_num = Z.shape # (N length of sequence, M # of sequences)
+
+    q = int(Z.max())
+
+    W, Meff = compute_weights(Z, theta)
