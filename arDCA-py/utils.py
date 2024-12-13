@@ -2,6 +2,7 @@ import numpy as np
 from Bio import AlignIO
 from typing import Any, Tuple
 
+
 def aa_to_num(aa: str) -> np.int8:
     """String to number, return 21 for gaps and unrecognized capital letters"""
     aa_to_num_dict = {
@@ -34,9 +35,9 @@ def read_fasta_alignment(filename: str, max_gap_fraction: float) -> np.ndarray:
     if not filtered_seqs:
         raise ValueError("No sequences passed gap filter (max_gap_fraction)={max_gap_fraction})")
     # Create numerical matrix (sequences as columns)
-    seq_length = alignment.get_alignment_length()
+    Ngth = alignment.get_alignment_length()
     num_seqs = len(filtered_seqs)
-    matrix = np.zeros((seq_length, num_seqs), dtype = np.int8)
+    matrix = np.zeros((Ngth, num_seqs), dtype = np.int8)
 
     # Fill matrix
     for col_i, record in enumerate(filtered_seqs):
@@ -45,6 +46,7 @@ def read_fasta_alignment(filename: str, max_gap_fraction: float) -> np.ndarray:
             matrix[row_j, col_i] = aa_to_num(char)
 
     return matrix
+
 
 def remove_duplicate_sequences(matrix: np.ndarray) -> np.ndarray:
     """Remove duplicate columns"""
@@ -59,13 +61,14 @@ def remove_duplicate_sequences(matrix: np.ndarray) -> np.ndarray:
 def hamming_distance_matrix(Z: np.ndarray) -> np.ndarray:
     return np.sum(Z[:, None, :] != Z[None, :, :], axis=-1)
 
+
 def compute_weights(Z: np.ndarray, max_val: int = None, theta: Union[float, str] = None) -> Tuple[np.ndarray, float]:
     """Compute the reweighting vector. Retruns vector and its sum, # of "effective" sequence
     Z: MSA Matrix (NxM)
     max_val: Maximum value in the alphabet
     theta: Distance threshold
     """
-    seq_len, seq_num = Z.shape
+    N, M = Z.shape
     
 
     if q is None:
@@ -75,18 +78,16 @@ def compute_weights(Z: np.ndarray, max_val: int = None, theta: Union[float, str]
         raise ValueError("theta must be int/float")
 
     if theta == 0:
-        return np.ones(seq_num), float(seq_num)
+        return np.ones(M), float(M)
 
     # Compute distance and weights
-    thresh = np.floor(theta * seq_len)
+    thresh = np.floor(theta * N)
     distances = hamming_distance_matrix(Z.T)
     similar_counts = np.sum(distances < thresh, axis=1)
     W = 1.0 / similar_counts
     Meff = np.sum(W)
 
     return W, Meff
-        
-    
 
 
 def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: bool): #add theta: Any
@@ -96,8 +97,10 @@ def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: 
     if remove_dups:
         Z = remove_duplicate_sequences(Z)
 
-    seq_len, seq_num = Z.shape # (N length of sequence, M # of sequences)
+    N, M = Z.shape # (N length of sequence, M # of sequences)
 
     q = int(Z.max())
 
-    W, Meff = compute_weights(Z, theta)
+    W, Meff = compute_weights(Z, theta=theta)
+
+    return W, Z, N, M, q
