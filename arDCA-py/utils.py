@@ -104,3 +104,65 @@ def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: 
     W, Meff = compute_weights(Z, theta=theta)
 
     return W, Z, N, M, q
+
+
+def computep0(var: ArVar):
+    W, Z, q, pc = var.W, var.Z, var.q, var.pc
+    p0 = np.zeros(q)
+
+    for i in range(len(W)):
+        p0[Z[0, i]] += W[i]
+
+    return p0 * (1 - pc) + pc / q
+
+
+def compute_empirical_freqs(Z: np.ndarray, W: np.ndarray, q: int):
+    N, M = Z.shape
+    f = np.zeros((q, N))
+
+    for i in range(N):
+        for j in range(M):
+            f[Z[i, j], i] += W[j]
+    
+    return f
+
+
+def entropy(Z: np.ndarray, W: np.ndarray):
+    N, M = Z.shape
+    q = Z.max()
+    f = compute_empirical_freqs(Z, W, q)
+    S = np.zeros(N)
+    for i in range(N):
+        row_entropy = 0.0
+        for a in range(q):
+            if f[a, i] > 0: 
+                row_entropy -= f[a, i] * np.log(f[a, i])
+        
+        S[i] = row_entropy
+    
+    return S
+
+
+def unpack_params(theta: np.ndarray, var: Any) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
+    N, q = var.N, var.q
+
+    arrJ = []  #each array corresponds to a site, holds interactiosn between pairs
+    arrH = []  #each array corresponds to bias or weight for each alphabet element at a site
+    counter = 0
+    for site in range(N):
+        _arrJ = np.zeros((q, q, site))
+        for i in range(site):
+            for a in range(q):
+                for b in range(q):
+                    counter += 1
+                    _arrJ[b, a, i] = theta[counter]
+        arrJ.append(_arrJ)
+
+        _arrH = np.zeros(q)
+        for a in range(q):
+            counter += 1
+            _arrH[a] = theta[counter]
+        arrH.append(_arrH)
+
+    assert counter == len(theta), f"Expected {len(theta)} values, but found {counter}"
+    return computepo(var), arrJ, arrH 
