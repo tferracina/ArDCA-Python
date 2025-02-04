@@ -105,7 +105,7 @@ def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: 
 
     return W, Z, N, M, q
 
-
+#laplace smoothing
 def computep0(var: ArVar):
     W, Z, q, pc = var.W, var.Z, var.q, var.pc
     p0 = np.zeros(q)
@@ -166,3 +166,17 @@ def unpack_params(theta: np.ndarray, var: Any) -> Tuple[np.ndarray, List[np.ndar
 
     assert counter == len(theta), f"Expected {len(theta)} values, but found {counter}"
     return computepo(var), arrJ, arrH 
+
+
+def softmax(x: np.ndarray) -> np.ndarray: #vectorized operations
+    u = np.max(x)
+    r = np.exp(x - u)
+    r /= np.sum(r)
+    return r
+
+def softmax_inplace(x: np.ndarray):
+    r = np.exp(x - np.max(x))
+    r /= np.sum(r)
+    return r
+
+def sample()

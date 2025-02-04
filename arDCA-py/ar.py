@@ -50,3 +50,7 @@ def ardca_fasta(filename: str, **kwargs):
     return ardca_zw(Z, W, **kwargs)
 
 def minimize_arnet(alg: ArAlg, var: ArVar) -> Tuple[theta, vecps]:
+    N, q, q2, idxperm = var.N, var.q, var.q2, var.idxperm
+    epsconv, maxit, method = alg.epsconv, alg.maxit, alg.method
+
+    x0 = np.zeros()
