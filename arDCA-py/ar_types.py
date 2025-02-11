@@ -30,7 +30,10 @@ class ArAlg:  # stores algorithm config
 
 @dataclass
 class ArNet:  # implements ar network functionality
-    idxperm: NDArray
-    p0: NDArray
-    J: List[NDArray]  # List of 3D arrays
     H: List[NDArray]  # List of 1D arrays
+    J: List[NDArray]  # List of 3D arrays
+    p0: NDArray
+    idxperm: NDArray
+    
+    
+    
