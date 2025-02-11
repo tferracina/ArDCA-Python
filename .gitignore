@@ -3,3 +3,5 @@ test.fa
 uv.lock
 
 .DS_Store
+
+arDCA-py/__pycache__
