@@ -1,6 +1,9 @@
 import numpy as np
 from Bio import AlignIO
-from typing import Any, Tuple
+from typing import Any, Tuple, Union, List
+import numpy.random as random
+
+from ar_types import ArVar, ArNet
 
 
 def aa_to_num(aa: str) -> np.int8:
@@ -92,43 +95,48 @@ def compute_weights(Z: np.ndarray, max_val: int = None, theta: Union[float, str]
 
 def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: bool): #add theta: Any
     """Read FASTA file"""
-
     Z = read_fasta_alignment(filename, max_gap_fraction)
     if remove_dups:
         Z = remove_duplicate_sequences(Z)
-
     N, M = Z.shape # (N length of sequence, M # of sequences)
-
-    q = int(Z.max())
-
+    q = int(np.max(Z))
     W, Meff = compute_weights(Z, theta=theta)
-
     return W, Z, N, M, q
 
 #laplace smoothing
-def computep0(var: ArVar):
+def computep0(var: ArVar) -> np.ndarray: # MAKE SURE THAT Z IS ALSO 0-indexed !!!!!
+    """
+    Compute a probability distribution by accumulating weights according to category assignments,
+    then applying pseudocount smoothing.
+      
+    Returns:
+      A 1D numpy array of length q representing the smoothed probability distribution.
+    """
     W, Z, q, pc = var.W, var.Z, var.q, var.pc
     p0 = np.zeros(q)
-
-    for i in range(len(W)):
-        p0[Z[0, i]] += W[i]
+    np.add.at(p0, Z[0, :], W)
 
     return p0 * (1 - pc) + pc / q
 
 
-def compute_empirical_freqs(Z: np.ndarray, W: np.ndarray, q: int):
-    N, M = Z.shape
-    f = np.zeros((q, N))
-
-    for i in range(N):
-        for j in range(M):
-            f[Z[i, j], i] += W[j]
+def compute_empirical_freqs(Z: np.ndarray, W: np.ndarray, q: int): # MAKE SURE THAT Z IS ALSO 0-INDEXED !!!!!
+    """
+    Compute empirical frequency counts weighted by W for a categorical dataset.
     
+     Returns:
+      A (q, Nrow) matrix."""
+    Nrow, _ = Z.shape
+
+    f = np.zeros((q, Nrow))
+
+    for i in range(Nrow):
+        np.add.at(f, (Z[i,:], i), W)
+
     return f
 
 
 def entropy(Z: np.ndarray, W: np.ndarray):
-    N, M = Z.shape
+    Nrow, Mcol = Z.shape
     q = Z.max()
     f = compute_empirical_freqs(Z, W, q)
     S = np.zeros(N)
@@ -165,7 +173,7 @@ def unpack_params(theta: np.ndarray, var: Any) -> Tuple[np.ndarray, List[np.ndar
         arrH.append(_arrH)
 
     assert counter == len(theta), f"Expected {len(theta)} values, but found {counter}"
-    return computepo(var), arrJ, arrH 
+    return computep0(var), arrJ, arrH
 
 
 def softmax(x: np.ndarray) -> np.ndarray: #vectorized operations
@@ -179,4 +187,107 @@ def softmax_inplace(x: np.ndarray):
     r /= np.sum(r)
     return r
 
-def sample()
+def sample(arnet: ArNet, msamples: int) -> np.ndarray:
+    """ 
+    Return a generated alignment in the form of a N x msamples  matrix
+
+    Args:
+        arnet: ArNet object containing model params
+        msamples: Number of samples to generate
+
+    Returns:
+        Array of shape (N + 1, msamples),  type `::Matrix{Int}`
+    """
+    H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
+    q = p0.size
+    N = H.size # NB: N is N-1
+
+    backorder = np.argsort(idxperm)
+    res = np.empty((N + 1, msamples), dtype=np.int32)
+
+    for i in range(msamples):
+        totH = np.empty(q, dtype=np.float64)
+        sample_z = np.empty(N + 1, dtype=np.int32)
+        sample_z[0] = random.choice(q, p=p0)
+
+        for site in range(N):
+            Js = J[site]
+            h = H[site]
+            totH[:] = h
+
+            for i in range(site + 1):
+                totH += Js[:, sample_z[i], i]
+
+            p = softmax(totH)
+            sample_z[site+1] = random.choice(q, p=p)
+        
+        res[:, i] = sample_z
+
+    ## MAKE SURE permuterow!(res, backorder) is correctly computed
+
+    return res[backorder]
+
+'''
+def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
+    H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
+    q = len(p0)
+    N = len(H)  # where N is actually N-1 in your context
+
+    # Prepare the batch sample array: each row is one sample sequence
+    sample_z = np.empty((msamples, N + 1), dtype = np.int32)
+
+    # Sample the initial state for all samples
+    sample_z[:, 0] = np.random.choice(q, size=msamples, p=p0)
+
+    # for site in range(N):
+        # For each sample, start with H[site]
+
+
+def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.ndarray]:
+    """ 
+    Return a generated alignment in the form of a N x msamples  matrix and the relative probabilities under the modules
+    Return a generated alignment in the form of a `N × msamples`  matrix  and the relative probabilities under the module
+
+
+    Args:
+        arnet: ArNet object containing model params
+        msamples: Number of samples to generate
+
+    Returns:
+        Array of shape (N + 1, msamples) of type `::Matrix{Int}` and probabilities
+    """
+    H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
+    q = len(p0)
+    N = len(H) # N is N-1
+
+    backorder = np.argsort(idxperm)
+    W = np.empty(msamples, dtype=np.float64)
+    res = np.empty((N + 1, msamples), dtype=np.int32)
+
+    for i in range(msamples):
+        totH = np.empty(q, dtype=np.float64)
+        sample_z = np.empty(N + 1, dtype=np.int32)
+        sample_z[1] = 
+
+
+        sample_z[1] = wsample(1:q, p0)
+        logw = log(p0[sample_z[1]])
+        for site in 1:N
+            Js = J[site]
+            h = H[site]
+            copy!(totH, h)
+            @turbo for i in 1:site
+                for a in 1:q
+                    totH[a] += Js[a, sample_z[i], i]
+                end
+            end
+            p = softmax(totH)
+            sample_z[site+1] = wsample(1:q, p)
+            logw += log(p[sample_z[site+1]])
+        end
+        W[i] = exp(logw)
+        res[:, i] .= sample_z
+    end
+    return W, permuterow!(res, backorder)
+end
+'''
