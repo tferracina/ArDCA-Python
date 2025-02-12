@@ -1,6 +1,8 @@
 import numpy as np
+import pytest
+from numpy.testing import assert_allclose
 
-from utils import sample
+from utils import sample, entropy
 from ar_types import ArNet
 
 def test_sampling_functions():
@@ -62,4 +64,55 @@ def test_sampling_functions():
     
     print("\nAll tests passed!")
 
-test_sampling_functions()
+
+def test_entropy():
+    # Set random seed for reproducibility
+    np.random.seed(42)
+    
+    # Define test parameters
+    q = 3    # number of states
+    N = 2    # number of sites
+    msamples = 25  # number of samples
+    
+
+    Z = np.random.randint(0, q, size=(N, msamples))  
+    W = np.ones(msamples) / msamples  # Equal weights
+    
+    # Test basic properties
+    S = entropy(Z, W)
+    assert len(S) == N
+    assert np.all(S >= 0)
+    assert np.all(S <= np.log(q))
+    
+    # Test with known distribution - adjusted to 0-based indexing
+    Z_known = np.array([[0, 0, 1, 1, 2],
+                        [1, 1, 0, 0, 2]])
+    
+    W_known = np.full(5, 0.2)  # Equal weights for 5 samples
+    S_known = entropy(Z_known, W_known)
+    
+    # For uniform distribution over 2 states (p=0.4 each) and 1 state (p=0.2),
+    # entropy should be: -0.4*log(0.4) - 0.4*log(0.4) - 0.2*log(0.2)
+    expected_entropy = -0.4 * np.log(0.4) - 0.4 * np.log(0.4) - 0.2 * np.log(0.2)
+    assert_allclose(S_known[0], expected_entropy, atol=1e-10)
+    assert_allclose(S_known[1], expected_entropy, atol=1e-10)
+    
+    # Test with zero weights
+    W_zero = np.zeros(msamples)
+    W_zero[0] = 1.0
+    S_zero = entropy(Z, W_zero)
+    assert np.all(np.isclose(S_zero, 0.0))
+    
+    # Test with single state
+    Z_single = np.zeros((N, msamples), dtype=int)  # Changed to use 0 instead of 1
+    S_single = entropy(Z_single, W)
+    assert np.all(np.isclose(S_single, 0.0))
+    
+    print("Entropy test results:")
+    print("Random data entropy:", S)
+    print("Known data entropy:", S_known)
+    print("Single state entropy:", S_single)
+    print("\nAll entropy tests passed!")
+
+if __name__ == "__main__":
+    test_entropy()

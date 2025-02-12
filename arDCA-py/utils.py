@@ -130,25 +130,20 @@ def compute_empirical_freqs(Z: np.ndarray, W: np.ndarray, q: int): # MAKE SURE T
     f = np.zeros((q, Nrow))
 
     for i in range(Nrow):
-        np.add.at(f, (Z[i,:], i), W)
+        np.add.at(f[:, i], Z[i, :], W)
 
     return f
 
 
 def entropy(Z: np.ndarray, W: np.ndarray):
     Nrow, Mcol = Z.shape
-    q = Z.max()
+    q = int(Z.max() + 1)
     f = compute_empirical_freqs(Z, W, q)
-    S = np.zeros(N)
-    for i in range(N):
-        row_entropy = 0.0
-        for a in range(q):
-            if f[a, i] > 0: 
-                row_entropy -= f[a, i] * np.log(f[a, i])
-        
-        S[i] = row_entropy
+
+    epsilon = 1e-10
+    mask = f > 0
     
-    return S
+    return -np.sum(np.where(mask, f * np.log(f + epsilon), 0), axis=0)
 
 
 def unpack_params(theta: np.ndarray, var: Any) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
