@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from utils import sample, entropy
+from utils import sample_vectorized, entropy
 from ar_types import ArNet
 
 def test_sampling_functions():
@@ -41,7 +41,7 @@ def test_sampling_functions():
     arnet = ArNet(H, J, p0, idxperm)
 
     # Run both sampling functions
-    res_sample = sample(arnet, msamples)
+    res_sample = sample_vectorized(arnet, msamples)
     #res_vectorized = sample_vectorized(arnet, msamples)
 
     # Print results.
@@ -115,4 +115,5 @@ def test_entropy():
     print("\nAll entropy tests passed!")
 
 if __name__ == "__main__":
-    test_entropy()
+    #test_entropy()
+    test_sampling_functions()

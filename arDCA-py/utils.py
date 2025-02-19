@@ -136,7 +136,6 @@ def compute_empirical_freqs(Z: np.ndarray, W: np.ndarray, q: int): # MAKE SURE T
 
 
 def entropy(Z: np.ndarray, W: np.ndarray):
-    Nrow, Mcol = Z.shape
     q = int(Z.max() + 1)
     f = compute_empirical_freqs(Z, W, q)
 
@@ -182,64 +181,40 @@ def softmax_inplace(x: np.ndarray):
     r /= np.sum(r)
     return r
 
-def sample(arnet: ArNet, msamples: int) -> np.ndarray:
-    """ 
-    Return a generated alignment in the form of a N x msamples  matrix
 
-    Args:
-        arnet: ArNet object containing model params
-        msamples: Number of samples to generate
-
-    Returns:
-        Array of shape (N + 1, msamples),  type `::Matrix{Int}`
-    """
-    H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
-    q = p0.size
-    N = H.size # NB: N is N-1
-
-    backorder = np.argsort(idxperm)
-    res = np.empty((N + 1, msamples), dtype=np.int32)
-
-    for i in range(msamples):
-        totH = np.empty(q, dtype=np.float64)
-        sample_z = np.empty(N + 1, dtype=np.int32)
-        sample_z[0] = random.choice(q, p=p0)
-
-        for site in range(N):
-            Js = J[site]
-            h = H[site]
-            totH[:] = h
-
-            for i in range(site + 1):
-                totH += Js[:, sample_z[i], i]
-
-            p = softmax(totH)
-            sample_z[site+1] = random.choice(q, p=p)
-        
-        res[:, i] = sample_z
-
-    ## MAKE SURE permuterow!(res, backorder) is correctly computed
-
-    return res[backorder]
-
-'''
 def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
-    q = len(p0)
-    N = len(H)  # where N is actually N-1 in your context
+    q = p0.size
+    N = H.size # where N is actually N-1 in your context
+
+    back_order = np.argsort(idxperm)
 
     # Prepare the batch sample array: each row is one sample sequence
-    sample_z = np.empty((msamples, N + 1), dtype = np.int32)
+    res = np.empty((N + 1, msamples), dtype = np.int32)
 
     # Sample the initial state for all samples
-    sample_z[:, 0] = np.random.choice(q, size=msamples, p=p0)
+    res[0, :] = np.random.choice(q, size=msamples, p=p0)
 
-    # for site in range(N):
-        # For each sample, start with H[site]
+    for site in range(N):
+        Js = J[site]
+        h = H[site]
 
+         # Compute total fields for all samples
+        tot_H = np.tile(h, (msamples, 1)).T
+        for i in range(site + 1):
+            # Vectorized coupling computation
+            tot_H += np.sum(Js[:, res[i, :], i], axis=1).reshape(-1, msamples)
+        
+        # Apply softmax and sample
+        p = softmax(tot_H)
+        res[site + 1, :] = np.array([np.random.choice(q, p=p[:, i]) for i in range(msamples)])
+    
+    # Apply permutation
+    return res[back_order, :]
 
+'''
 def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.ndarray]:
-    """ 
+     
     Return a generated alignment in the form of a N x msamples  matrix and the relative probabilities under the modules
     Return a generated alignment in the form of a `N × msamples`  matrix  and the relative probabilities under the module
 
@@ -250,7 +225,7 @@ def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.nda
 
     Returns:
         Array of shape (N + 1, msamples) of type `::Matrix{Int}` and probabilities
-    """
+
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
     q = len(p0)
     N = len(H) # N is N-1
