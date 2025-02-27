@@ -185,12 +185,13 @@ def softmax_inplace(x: np.ndarray):
 def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
     q = p0.size
-    N = H.size # where N is actually N-1 in your context
+    N, _ = H.shape # where N is actually N-1 
+    res_N = N + 1
 
     back_order = np.argsort(idxperm)
 
     # Prepare the batch sample array: each row is one sample sequence
-    res = np.empty((N + 1, msamples), dtype = np.int32)
+    res = np.empty((res_N, msamples), dtype = np.int32)
 
     # Sample the initial state for all samples
     res[0, :] = np.random.choice(q, size=msamples, p=p0)
