@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from utils import sample_vectorized, entropy
+from utils import sample, sample_with_weights, entropy
 from ar_types import ArNet
 
 def generate_random_params(q, N):
@@ -37,21 +37,46 @@ def test_sample_function():
     H, J, p0, idxperm = generate_random_params(q, N)
     arnet = ArNet(H, J, p0, idxperm)
 
-    # Run both sampling functions
-    res_sample = sample_vectorized(arnet, msamples)
+    # Run sampling function
+    res_sample = sample(arnet, msamples)
+    weights, res_sample_weights = sample_with_weights(arnet, msamples)
 
     # Print results.
-    print("Output of sample (naïve loop-based):")
+    print("Output of sample:")
     print(res_sample)
     print("Shape:", res_sample.shape)
+
+    print("Output of sample with weights:")
+    print(res_sample_weights)
+    print(weights)
+    print("Shape:", res_sample.shape)
+    print("Weights shape:", weights.shape)
 
     # --- Basic tests ---
     expected_shape = (N + 1, msamples)
     assert res_sample.shape == expected_shape, "sample: Unexpected shape"
+    assert res_sample_weights.shape == expected_shape, "sample_weights: Unexpected shape"
+
+    expected_weights = msamples
+    assert len(weights) == expected_weights, "weights: Unexpected shape"
     # Check that all values are valid state indices (between 0 and q-1).
     assert np.all((res_sample >= 0) & (res_sample < q)), "sample: Values out of range"
+    assert np.all((res_sample_weights >= 0) & (res_sample_weights < q)), "sample_weights: Values out of range"
     
     print("\nAll tests passed!")
+
+
+def test_weights_sample_function():
+    np.random.seed(42)
+
+    # Define basic params
+    q = 5
+    N = 5
+    msamples = 10
+
+    # Create ArNet instance
+    H, J, p0, idxperm = generate_random_params(q, N)
+    arnet = ArNet(H, J, p0, idxperm)
 
 
 def test_entropy():

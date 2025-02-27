@@ -182,7 +182,7 @@ def softmax_inplace(x: np.ndarray):
     return r
 
 
-def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
+def sample(arnet: ArNet, msamples: int) -> np.ndarray:
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
     q = p0.size
     N, _ = H.shape # where N is actually N-1 
@@ -190,7 +190,7 @@ def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
 
     back_order = np.argsort(idxperm)
 
-    # Prepare the batch sample array: each row is one sample sequence
+    # Initialize result matrix
     res = np.empty((res_N, msamples), dtype = np.int32)
 
     # Sample the initial state for all samples
@@ -213,12 +213,11 @@ def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
     # Apply permutation
     return res[back_order, :]
 
-'''
-def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.ndarray]:
-     
-    Return a generated alignment in the form of a N x msamples  matrix and the relative probabilities under the modules
-    Return a generated alignment in the form of a `N × msamples`  matrix  and the relative probabilities under the module
 
+def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Return a generated alignment in the form of a N x msamples matrix and the relative probabilities under the module
+    
 
     Args:
         arnet: ArNet object containing model params
@@ -226,39 +225,35 @@ def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.nda
 
     Returns:
         Array of shape (N + 1, msamples) of type `::Matrix{Int}` and probabilities
+    """ 
 
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
-    q = len(p0)
-    N = len(H) # N is N-1
+    q = p0.size
+    N, _ = H.shape
+    res_N = N + 1
 
-    backorder = np.argsort(idxperm)
+    back_order = np.argsort(idxperm)
+
+    # Initialize result and weight vector
     W = np.empty(msamples, dtype=np.float64)
-    res = np.empty((N + 1, msamples), dtype=np.int32)
+    res = np.empty((res_N, msamples), dtype=np.int32)
 
-    for i in range(msamples):
-        totH = np.empty(q, dtype=np.float64)
-        sample_z = np.empty(N + 1, dtype=np.int32)
-        sample_z[1] = 
+    # Sample initial state
+    res[0, :] = np.random.choice(q, size=msamples, p=p0)
+    logw = np.log(p0[res[0, :]])
 
+    for site in range(N):
+        Js = J[site]
+        h = H[site]
 
-        sample_z[1] = wsample(1:q, p0)
-        logw = log(p0[sample_z[1]])
-        for site in 1:N
-            Js = J[site]
-            h = H[site]
-            copy!(totH, h)
-            @turbo for i in 1:site
-                for a in 1:q
-                    totH[a] += Js[a, sample_z[i], i]
-                end
-            end
-            p = softmax(totH)
-            sample_z[site+1] = wsample(1:q, p)
-            logw += log(p[sample_z[site+1]])
-        end
-        W[i] = exp(logw)
-        res[:, i] .= sample_z
-    end
-    return W, permuterow!(res, backorder)
-end
-'''
+        # Compute total fields for all samples
+        tot_H = np.tile(h, (msamples, 1)).T
+        for i in range(site + 1):
+            tot_H += Js[:, res[i, :], i]
+        
+        p = softmax(tot_H)
+        res[site + 1, :] = np.array([np.random.choice(q, p=p[:, i]) for i in range(msamples)])
+        logw += np.log(p0[res[site + 1, :]])
+    W = np.exp(logw)
+
+    return W, res[back_order, :]
