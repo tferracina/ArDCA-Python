@@ -171,9 +171,9 @@ def unpack_params(theta: np.ndarray, var: Any) -> Tuple[np.ndarray, List[np.ndar
 
 
 def softmax(x: np.ndarray) -> np.ndarray: #vectorized operations
-    u = np.max(x)
+    u = np.max(x, axis=0, keepdims=True)
     r = np.exp(x - u)
-    r /= np.sum(r)
+    r /= np.sum(r, axis=0, keepdims=True)
     return r
 
 def softmax_inplace(x: np.ndarray):
@@ -204,7 +204,7 @@ def sample_vectorized(arnet: ArNet, msamples: int) -> np.ndarray:
         tot_H = np.tile(h, (msamples, 1)).T
         for i in range(site + 1):
             # Vectorized coupling computation
-            tot_H += np.sum(Js[:, res[i, :], i], axis=1).reshape(-1, msamples)
+            tot_H += Js[:, res[i, :], i]
         
         # Apply softmax and sample
         p = softmax(tot_H)

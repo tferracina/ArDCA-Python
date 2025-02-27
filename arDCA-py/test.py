@@ -31,7 +31,7 @@ def test_sample_function():
     # define basic params
     q = 20    # number of states
     N = 5    # number of sites
-    msamples = 2  # numer of sites to generate
+    msamples = 10  # numer of sites to generate
     
     # Create an ArNet instance.
     H, J, p0, idxperm = generate_random_params(q, N)
