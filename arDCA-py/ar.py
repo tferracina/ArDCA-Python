@@ -2,6 +2,7 @@ import numpy as np
 from typing import Union, Tuple
 
 from types import ArVar, ArAlg, ArNet
+from utils import read_fasta, checkpermorder
 
 
 def ardca_zw(Z: np.ndarray, W: np.ndarray,
@@ -11,10 +12,10 @@ def ardca_zw(Z: np.ndarray, W: np.ndarray,
             epsconv: float = 1.0e-5,
             maxit: int = 1000,
             verbose: bool = True,
-            method: str,
-            permorder: Union[str, np.ndarray]):
+            method: str = "LD_LBFGS",
+            permorder: Union[str, np.ndarray] = "ENTROPIC"):
 
-    #checkpermorder(permorder)
+    checkpermorder(permorder)
     
     # Check W is normalized
     if (W < 0).any():

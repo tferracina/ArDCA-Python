@@ -5,6 +5,7 @@ import numpy.random as random
 
 from ar_types import ArVar, ArNet
 
+ALL_PERMORDER = ["NATURAL", "ENTROPIC", "REV_ENTROPIC", "RANDOM"]
 
 def aa_to_num(aa: str) -> np.int8:
     """String to number, return 21 for gaps and unrecognized capital letters"""
@@ -102,6 +103,28 @@ def read_fasta(filename: str, max_gap_fraction: float, theta: Any, remove_dups: 
     q = int(np.max(Z))
     W, Meff = compute_weights(Z, theta=theta)
     return W, Z, N, M, q
+
+
+def checkpermorder(permorder):
+    if isinstance(permorder, str):
+        if not permorder in ALL_PERMORDER:
+            raise ValueError("permorder not implemented")
+    elif isinstance(permorder, list):
+        if not is_permutation(permorder):
+            raise ValueError("permorder is not a permutation")
+    else:
+        raise TypeError("permorder must be a string or a list of integers")
+
+
+def is_permutation(permorder):
+    n = len(permorder)
+    seen = set()
+    for x in permorder:
+        if not isinstance(x, int) or x < 1 or x > n or x in seen:
+            return False
+        seen.add(x)
+    return True
+
 
 #laplace smoothing
 def computep0(var: ArVar) -> np.ndarray: # MAKE SURE THAT Z IS ALSO 0-indexed !!!!!
