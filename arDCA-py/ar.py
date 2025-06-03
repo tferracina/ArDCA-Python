@@ -1,4 +1,6 @@
 import numpy as np
+import nlopt
+import time
 from typing import Union, Tuple
 
 from types import ArVar, ArAlg, ArNet
@@ -50,8 +52,50 @@ def ardca_fasta(filename: str, **kwargs):
     W /= W.sum() # Normalize weights
     return ardca_zw(Z, W, **kwargs)
 
-def minimize_arnet(alg: ArAlg, var: ArVar) -> Tuple[theta, vecps]:
+def minimize_arnet(alg: ArAlg, var: ArVar) -> Tuple[np.ndarray, np.ndarray]:
+    """Site-by-site nonlinear optimization to fit parameters of autoregressive model"""
     N, q, q2, idxperm = var.N, var.q, var.q2, var.idxperm
     epsconv, maxit, method = alg.epsconv, alg.maxit, alg.method
+    
+    vec_size = (N * (N - 1) // 2) * q2 + (N - 1) * q
 
-    x0 = np.zeros()
+    vecps = np.zeros(N - 1, dtype=np.float64) # array of minimal negative log-pseudo likelihoods, one entry per site
+    theta = np.zeros(vec_size, dtype=np.float64) # concatenated vector fo all site-wise parameters
+    
+    for site in range(1, N):
+        x0 = np.zeros(site * q2 + q, dtype=np.float64) #site*q2 coupling weights + q local fields
+
+        # construct NLopt optimizer
+        opt = nlopt.opt(method, x0.size)
+
+        # set tolerances on absolute/relative function and parameter values
+        opt.set_ftol_abs(epsconv)
+        opt.set_ftol_rel(epsconv)
+        opt.set_xtol_abs(epsconv)
+        opt.set_xtol_rel(epsconv)
+
+        # stop after at most maxit evaluations
+        opt.set_maxeval(maxit)
+
+        # define objective function
+        opt.set_min_objective() # (x, g) -> optimfunwrapper(x, g, site, var) should be minimized
+        
+        # run and time optimization
+        start_time = time.perf_counter()
+        minx = opt.optimize(x0)
+        elapsed = time.perf_counter() - start_time
+
+        minf = opt.last_optimum_value() # minimized pseudo-likelihood
+        status = opt.last_optimize_result()
+
+        if alg.verbose:
+            print(f"site = {idxperm[site]}\tpl = {minf:.4f}\ttime = {elapsed:.4f}\t")
+            print(f"status: {status}")
+
+        vecps[site - 1] = minf
+        offset = (site * (site - 1) // 2) * q2 + (site - 1) * q
+        theta[offset : offset + site * q2 + q ] = minx
+    
+    return theta, vecps
+
+

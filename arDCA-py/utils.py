@@ -7,7 +7,7 @@ from ar_types import ArVar, ArNet
 
 ALL_PERMORDER = ["NATURAL", "ENTROPIC", "REV_ENTROPIC", "RANDOM"]
 
-def aa_to_num(aa: str) -> np.int8:
+def aa_to_num(aa: str) -> int:
     """String to number, return 21 for gaps and unrecognized capital letters"""
     aa_to_num_dict = {
         'A': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5,
@@ -208,7 +208,7 @@ def softmax_inplace(x: np.ndarray):
 def sample(arnet: ArNet, msamples: int) -> np.ndarray:
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
     q = p0.size
-    N, _ = H.shape # where N is actually N-1 
+    N = H.shape[0] # where N is actually N-1 
     res_N = N + 1
 
     back_order = np.argsort(idxperm)
@@ -252,7 +252,7 @@ def sample_with_weights(arnet: ArNet, msamples: int) -> Tuple[np.ndarray, np.nda
 
     H, J, p0, idxperm = arnet.H, arnet.J, arnet.p0, arnet.idxperm
     q = p0.size
-    N, _ = H.shape
+    N = H.shape[0]
     res_N = N + 1
 
     back_order = np.argsort(idxperm)
