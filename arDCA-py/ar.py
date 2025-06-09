@@ -78,7 +78,7 @@ def minimize_arnet(alg: ArAlg, var: ArVar) -> Tuple[np.ndarray, np.ndarray]:
         opt.set_maxeval(maxit)
 
         # define objective function
-        opt.set_min_objective() # (x, g) -> optimfunwrapper(x, g, site, var) should be minimized
+        opt.set_min_objective(lambda x, g: compute_pslikeandgrad(x, g, site, var))
         
         # run and time optimization
         start_time = time.perf_counter()
@@ -98,4 +98,83 @@ def minimize_arnet(alg: ArAlg, var: ArVar) -> Tuple[np.ndarray, np.ndarray]:
     
     return theta, vecps
 
+def compute_pslikeandgrad(x: np.ndarray, grad: np.ndarray, site: int, var: ArVar) -> np.float64:
+    """ Function that computs the pseudo log-likelihood and gradient
+    
+    Returns: a Float64 value equal to the (penalized) pseudo-log-likelihood at x.
+    Also, writes into grad[:] the gradient ∇ of that same objective.
+    """
+    N, M, q, q2, lambdaJ, lambdaH, Z, W, IdxZ = var.N, var.M, var.q, var.q2, var.lambdaJ, var.lambdaH, var.Z, var.W, var.IdxZ
+    LL = x.shape[0]
 
+    # initialize grad array
+    grad = np.zeros_like(x)
+
+    # Apply lambdaJ scaling for indices 1 to LL - q
+    grad[:LL - q] = 2.0 * lambdaJ * x[:LL - q]
+
+    # Apply lambdaH scaling for indices LL - q + 1 to LL
+    grad[LL - q:] = 2.0 * lambdaH * x[LL - q:]
+    # initialize variables
+    pseudolike = 0.0 # minus–log-likelihood over all M cases
+
+    vecenergies = np.zeros(q, dtype=np.float64) # vector unnormalized log-potentials, for each state at current site
+    expvecenesumnorm = np.zeros(q, dtype=np.float64) # normalized probabilities
+
+    for m in range(M):
+        izm = IdxZ[:, m]
+        zsm = Z[site, m]
+
+        fill_vecenergies(vecenergies, x, site, izm, q, N)
+
+        lnorm = logsumexp(vecenergies)
+        exp_vecenergies_sumnorm = np.exp(vecenergies - lnorm)
+
+        pseudolike -= W[m] * (vecenergies[zsm] - lnorm)
+
+        sq2 = site * q2
+
+        for i in range(site):
+            for s in range(q):
+                grad[izm[i] + s] += W[m] * exp_vecenergies_sumnorm[s]
+
+            grad[izm[i] + zsm] -= W[m]
+
+        for s in range(q):
+            grad[sq2 + s] += W[m] * exp_vecenergies_sumnorm[s]
+        
+        grad[sq2 + zsm] -= W[m]
+
+    pseudolike += l2norm_asym(x, var)
+
+    return pseudolike
+
+
+def fill_vecenergies(vecenergies: np.ndarray, x: np.ndarray, site: int, IdxSeq: np.ndarray, q: int, N: int):
+    q2 = q * q
+    sq2 = site * q2
+
+    # (site × q) array of offsets
+    offs = IdxSeq[:, None] + np.arange(q)
+
+    # Sum over axis=0 to get a length-q vector, then add the sq2 term
+    vecenergies[:q] = x[offs].sum(axis=0) + x[sq2 : sq2 + q]
+
+
+def logsumexp(X: np.ndarray):
+    u = np.max(X)
+    if np.isfinite(u):
+        return u + np.log(np.sum(np.exp(X - u)))
+    else:
+        return u
+
+
+def l2norm_asym(vec: np.ndarray, var: ArVar):
+    q = var.q
+    lambdaJ, lambdaH = var.lambdaJ, var.lambdaH
+
+    # slice the coupling-block and the field-block
+    J_entries = vec[:-q] # shape ((N-1)*q^2,)
+    H_entries = vec[-q:] # shape (q,)
+
+    return lambdaJ * J_entries.dot(J_entries) + lambdaH * H_entries.dot(H_entries)
