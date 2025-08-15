@@ -1,3 +1,35 @@
+#set text(font: "Arial", size: 12pt)
+#set page(margin: 
+            ( left: 2.5cm, 
+              right: 2.5cm, 
+              top: 2.5cm, 
+              bottom: 2.5cm),
+          numbering: "1",
+          number-align: center)
+
+#set heading(numbering: "1.1.1.") 
+
+#show heading: it => [
+  #v(0.5em)
+  #set align(left)
+  #set text(13pt, weight: "regular", font: "Arial CE MT")
+
+  #block([
+    // Only display number if numbering is enabled for this heading
+    #(if it.numbering != none { counter(heading).display(it.numbering) + " " })
+    #smallcaps(it.body)
+  ])
+  #v(0.5em)
+]
+
+#set par( justify: true,
+          leading: 1.4em,
+          spacing: 2.6em)
+
+#pagebreak()
+#pagebreak()
+
+
 = Introduction
 
 Proteins are biomolecules that are fundamental to nearly all biological processes. Their diverse roles include transporting nutrients, catalyzing chemical reactions, providing structural support, and more. In alignment-based analyses, the function of a protein is determined by its primary sequence, a chain composed of 20 amino acids and an additional symbol representing an alignment gap. A single protein sequence can vary greatly in length and order of its amino acids, leading to a very large number of possible configurations. 
@@ -52,3 +84,5 @@ Studying proteins at the sequence level can be challenging because of the immens
 = Implementation
 
 = Results and Conclusions
+
+#bibliography("references.bib")
