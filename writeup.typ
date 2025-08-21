@@ -1,4 +1,4 @@
-#set text(font: "Arial", size: 12pt)
+#set text(font: "New Computer Modern", size: 12pt)
 #set page(margin: 
             ( left: 2.5cm, 
               right: 2.5cm, 
@@ -12,7 +12,7 @@
 #show heading: it => [
   #v(0.5em)
   #set align(left)
-  #set text(13pt, weight: "regular", font: "Arial CE MT")
+  #set text(13pt, weight: "regular", font: "New Computer Modern")
 
   #block([
     // Only display number if numbering is enabled for this heading
@@ -50,69 +50,72 @@ In this work, I explore the implementation of an autoregressive neural network f
 = Biological Background
 
 == Proteins and their structure 
-Proteins are essential biological molecules responsible for a wide range of functions in living organisms. Despite their functional diversity, all proteins are polymers of the same set of standard building blocks: the 20 canonical amino acids arranged in different assortments. These amino acids are linked though peptide bonds, which is why proteins are also known as polypeptides.
+Proteins are essential biological molecules responsible for a wide range of functions in living organisms. Despite their functional diversity, all proteins are polymers of the same set of standard building blocks: the 20 canonical amino acids arranged in different assortments.
 
-Amino acids share a common core structure consisting of a central carbon atom bonded to a hydrogen atom, an amino group, a carboxyl group, and a variable side chain. This side chain is the defining feature of each amino acid, giving rise to differences in size, shape, chemical reactivity, and polarity. [+LINKING SENTENCE HIGHLIGHTING THE FACT THAT DIFFERENT AAs PRODUCE DIFFERENT PURPOSE PROTEINS- atm unclear why amino acid chemical properties are important]. Generally the sequences are made up of between 50 and 2000 amino acids. The ordering of the amino acids dictates how a protein folds into its three-dimensional structure, known as its conformation. Although each conformation is unique, two common folding patterns occur in many proteins: the $alpha$ helix and the $beta$ sheet.
+Amino acids share a common core structure consisting of a central carbon atom bonded to a hydrogen atom, an amino group, a carboxyl group, and a variable side chain. This side chain is the defining feature of each amino acid, giving rise to differences in size, shape, chemical reactivity, and polarity. The distinct amino acids are bonded together through peptide bonds to form proteins, also known as polypeptides. Generally, protein sequences are made up of between 50 and 2000 amino acids. The ordering of the amino acids dictates how a protein folds into its three-dimensional structure, known as its conformation. A protein's conformation helps it in completing its task, therefore defines its function.Although each conformation is unique, two common folding patterns occur in many proteins: the $alpha$ helix and the $beta$ sheet.
 
-Protein structure is broken down into four levels of organization. The amino acid sequence is known as the primary structure. The regularly repeating local structures stabilized by chemical bonds, such as helices and sheets, are referred to as the secondary structure. The overall three-dimensional shape of a single protein molecule constitutes the tertiary structure. Finally, if a protein molecule is formed as a complex of more than one polypeptide chain, the complete structure is the quaternary structure @alberts2002.
+Protein structure is broken down into four levels of organization. The amino acid sequence is known as the primary structure. The regularly repeating local structures stabilized by chemical bonds, such as the previously mentioned helices and sheets, make up the secondary structure. The overall three-dimensional shape of a single protein molecule constitutes the tertiary structure. Finally, if a protein molecule is formed as a complex of more than one polypeptide chain, the complete structure is known as the quaternary structure @alberts2002.
 
 Each amino acid is chemically distinct and can occur at any position in a protein chain, giving rise to $20^n$ possible polypeptide sequences of length $n$. For a typical protein of 300 amino acids, the number of possible sequences is astronomically large. However, only a small fraction of these sequences are capable of folding into a stable three-dimensional conformation. Natural selection has enabled living organisms to explore sequence space, favoring those sequences that reliably fold into stable structures.
 
 
 == Protein families and evolutionary information
-Proteins do not evolve in isolation; instead, they belong to protein families, groups of proteins that share a common evolutionary origin and therefore exhibit related structures and functions @ebi_protein_families. 
+Proteins do not evolve in isolation; they often belong to protein families, groups of proteins that share a common evolutionary origin, therefore exhibiting related sequence features and functional properties @ebi_protein_families. Throughout years of evolution, mutations accumulate in these families: some are beneficial, altering the protein activity in ways that give rise to new functions, while many others are neutral and have no effect on stability or activity. Harmful changes, by contrast, disrupt folding or function and are eliminated by natural selection. The result is a collection of homologous proteins that retain overall structural and functional characteristics, but also display sequence variability that encodes the evolutionary history of the family @alberts2002. 
+
+The study of evolutionary history and relationships among biological entities is referred to as phylogenetics. Potein families provide the domain for phylogenetic analysis, as examining families provides insight that cannot be obtained from a single sequence. Analyzing homologous proteins across diverse organisms allows the detection of correlated mutations between amino acid positions, which in turn represent structural or functional constraints enforced by evolution. These statistical patterns are exploited by computational approaches to predict three-dimensional structure and understand protein function. @morcos2011
 
 
-Define: proteins with shared evolutionary origin, similar structure/function.
+== Multiple sequence alignments
+To extract important evolutionary clues from protein families, the homologous sequences need to be organized in a systematic way. This is done through a multiple sequence alignment (MSA), in which three or more sequences are arranged so that homologous sites are placed in the same column @WILTGEN201938. To maximise the positional correspondence of sequences with varied length, alignment gaps are introduced when necessary. 
 
-Point out that protein sequences vary across species but retain conserved features critical for function.
-
-Explain why families are important: by comparing homologous sequences across organisms, we can extract information not obvious from a single sequence.
-
-
-== Multiple Sequence Alignments
-Studying proteins at the sequence level can be challenging because of the immense diveristy and complexity of possible configurations. However, comparitive analyses across related proteins, grouped into protein families, allow researchers to identify conserved positions and co-evolving residue pairs, offering insights into structural and functional constraints. This is the basis of approaches such as Direct Coupling Analysis, which seeks to uncover the statistical dependencies between amino acid positions that reflect physical contacts in the folded structure.
+Multiple sequence alignments reveal patterns of conservation and variation across the family. Conserved positions, those which are unchanged in multiple sequences, represent sites that are critical for mainting structure or function, while variable positions indicate sites that can tolerate mutations without disruption to the protein. Beyond conservation, MSAs also capture covariation: pairs of positions that mutate in a correlated way across sequences. These covariation signals reflect couplings, where a mutation at one site requires compensation at another to maintain protein integrity. [ADD SOURCE- wikipedia]
 
 
-== Protein Residues and Contacts
-One of the earliest challenges for researchers in computational biology, encouraged by the CASP (Critical Assessment of Structure Prediction) competition, has been understanding how a linear sequence of amino acids folds into a three-dimensional protein structure. Since a protein's 3D shape largely determines its biological function, predicting structure from sequence is a fundamental goal. 
+== Protein residues and contacts
+[[POSSIBLY REMOVE One of the earliest challenges for researchers in computational biology--encouraged also by the CASP (Critical Assessment of Structure Prediction) competition--has been to understand how the linear sequence of amino acids folds into its conformation.]]
+
 Two important concepts in this context are residues and contacts:
 - *Residues*: An individual amino acid within a protein sequence. During peptide bond formations, the chemically linked amino acids usually lose certain atoms, and what remains is referred to as the "residue" of the original amino acid. In structural biology, “residue” also refers to a specific position in a protein sequence.
-- *Contacts*: A pair of residues that are spatially close in a protein's folded three-dimensional structure. These structures can be represented in Cartesian coordinates $(x,y,z)$, hence the contacts are defined using distance thresholds. Two residues are generally considered to be in contact if the distance between selected atoms is below a set threshold, usually 8 Ångströms (Å). Residues that are far apart in the linear sequence, may be close together in the 3D structure. may be far apart in @adhikari2016
+- *Contacts*: A pair of residues that are spatially close in a protein's folded three-dimensional structure. These structures can be represented in Cartesian coordinates $(x,y,z)$, hence the contacts are defined using distance thresholds. Two residues are generally considered to be in contact if the distance between selected atoms is below a set threshold, usually 8 Ångströms (Å). Residues that are far apart in the linear sequence, may be close together in the 3D structure @adhikari2016.
 
-important to add: there is short, mid and long range + most models evalute long range separately- it is the most important and hardest to predicting
-
-This leads us to: 
+Contacts are further broken down into short, medium, and long range predictions. Most computational approaches evaluate the long range contacts separately, as they are the most important for accurate predictions and unsurprisingly, the hardest to predict @adhikari2016. 
 
 == The problem of inference
+The specific challenge in computational biology that this paper explores is the prediction, and generation, of protein sequences given a multiple sequence alignment. As previously mentioned the protein families intrinsicly contain correlations between residues which allows the model to build a predictive thing. 
+The inherent challenge of these models is to distinguish between direct and indirect correlations. 
+
 computational biology challenge: given MSA, oobserve correlations between residues (MI, co-variation)
 but correlations can be direct vs. indirect
 
-lead into DCA 
-
-AlphaFold / Boltz-2 ... will be used for  structural integrity check.
-
 = Mathematical Foundations
 
-== Proteins as Statistical Systems
+== Proteins as statistical systems
+By analyzing statistical distributions of amino acids present in MSAs
+
+- sequence variation = samples from prob dist over sequences
+- statistical mechanics: Hamiltonian descibes high-dim dist
+define the Hamiltonian used in arDCA with field and couplings 
+- statmech: define interactions -> derive properties
+- protein inference: inverse! observe samples and reconstruct underlying interaction parameters
 
 == Direct Coupling Analysis
+- how DCA solves this problem
 
 = Evolution of DCA Methods
 
-== Mean-field DCA (mfDCA)
+== Mean-field DCA
 
 - Simplified inference method; first successful applications to contact prediction
 
 - Strengths/weaknesses
 
-== Pseudo-likelihood Maximization DCA (plmDCA)
+== Pseudo-likelihood Maximization DCA
 
 - More accurate & scalable inference
 
 - Widely used in practice
 
-== Boltzmann Machine DCA (bmDCA)
+== Boltzmann Machine DCA
 
 - Boltzmann learning to directly fit the Potts model
 
@@ -133,9 +136,14 @@ ArDCA is an autoregressive network built on the basis of the Direct Coupling Ana
 - Attention-Potts Model: factored self-attention -> potts model
 
 = Implementation and Extension
+
+== Implementation details
 - Julia -> Python re-implementation (vectorization, frameworks, missing functions)
+== Computational challenges
+
 - Benchmarks
-(MAYBE) Improvements:
+
+== (MAYBE) Improvements:
 - Allowing arbitrary sequence length (GPT-style transformers)
 - Incorporating attention mechanism (Potts with attention)
 
