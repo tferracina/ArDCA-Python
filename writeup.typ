@@ -42,7 +42,7 @@
 
 #outline(target: heading.where(supplement: [Appendix]), title: [Appendix])
 
-
+#pagebreak()
 = Introduction
 
 Proteins are biomolecules that are fundamental to nearly all biological processes. Their diverse roles include transporting nutrients, catalyzing chemical reactions, providing structural support, and more. The function of a protein is determined by the composition of its primary sequence, composed of 20 amino acids. A single protein sequence can vary greatly in length and order of its amino acids, leading to a very large number of possible configurations. 
@@ -89,13 +89,12 @@ The specific challenge in computational biology that will be explored in this pa
 Protein sequences can be thought of as random variables produced by a certain distribution.  Each sequence of length $L$ can be written as:
 #set math.equation(numbering: "(1)", supplement: "Eq.")
 $
-bold("S") = (s_1, s_2, ..., s_L), quad s_i in cal(A),
-$ where $cal(A)$ is the alphabet of size $q = 21$ (20 amino acids and the alignment gap) and $s_i$ are the residue sites. When considering multiple sequence alignments, we have $M$ empirical samples: ${s^((1)) , s^((2)), ..., s^((M))}$.
-The sites $s_i$, columns in the MSA, are random variables and the whole sequence is therefore a joint random variable $bold("S")$ with a distribution over $cal(A)^L$, where $|cal(A)| = 21$.
+bold(sigma) = (sigma_1, sigma_2, ..., sigma_L), quad sigma_i in cal(A),
+$ where $cal(A)$ is the alphabet of size $q = 21$ (20 amino acids and the alignment gap) and $sigma_i$ are the residue sites. We can organize these sequences into multiple sequence alignments, a table ${bold(sigma)^((m))}^M_(m=1)$ of $M$ empirical samples. These samples are aligned to have a common length $L$. Each row in the MSA represents a protein, and each column a position in the sequence.
 
 From the alignments, we can define single and pairwise frequency counts for the columns. The single-site frequency for MSA column $i$ can be computed as:
 $
-f_i (A) = 1/M sum^M_(m=1) delta(s_i^((m)), A), quad A in cal(A),quad  
+f_i (k) = 1/M sum^M_(m=1) delta(s_i^((m)), A), quad A in cal(A),quad  
 "where" delta "is the Kronecker delta" #footnote[$delta(x, y) := cases( 0 "if" x != y, 1 "if" x=y) $]
 $
 While the pairwise frequencies of MSA columns $i, j$ are computed as:
@@ -176,8 +175,8 @@ The Potts model simplifies to an Ising model when $q=2$.
 
 Putting this together, the probability distribution from the Potts model is written as:
 $
-  P(bold(S)) = 1 / Z exp(sum_(i=1)^L h_i (s_i) + sum_(1 <= i < j <= L) J_(i j)(s_i, s_j)).
-$
+  P(bold(sigma)) = 1 / Z exp(sum_(i=1)^L h_i (sigma_i) + sum_(1 <= i < j <= L) J_(i j)(sigma_i, sigma_j)).
+$ <potts>
 
 == Direct Coupling Analysis
 Naively, correlations in the alignment can be capture by covariance, but this simple approach will not be able to separate the direct correlations, arising from structural or functional contacts, and the indirect correlations, which are propagated via other residues. Taking the empirical frequencies as before we can define the covariance matrix:
@@ -186,21 +185,19 @@ $
 $ <corr>
 A positive $C_(i j)(A, B)$ means that $A$ at $i$ and $B$ at $j$ co-occur more often than expected by chance. The reverse is true for a negative value, where the residues occur less often than expected. The covariance matrix is computed across the whole alignment, and it contains crucial information about pairwise correlations between residues.
 
-From here, all classical DCA methods use the empirical frequency counts as constraints under which the Maximum Entropy Principle will find the most accurate and least biased distribution. As previously alluded, the solution to this system is the Potts model:
+From here, all classical DCA methods use the previously defined tools and assume that the rows of the MSAs are independent events drawn from a Potts-model distribution,
 
 $
-  P(bold(S)) prop exp(sum_(i) h_i (s_i) + sum_(i < j) J_(i j)(s_i, s_j))
+  P(bold(sigma)) = 1 / Z exp(sum_(i) h_i (sigma_i) + sum_(i < j) J_(i j)(sigma_i, sigma_j))
 $
 where the local field represents the single-column, and the couplings represent the column pairs.  
 
-The problem with this approach is that learning all of the $h_i, J_(i j)$ directly is difficult. To find them, an evaluation of the partition function $Z$ is required, which entails summing over the potentionally astronomical $q^L$ possible sequences. The distinct implementations of DCA introduce approximations to bypass this complex computation.
-
-The first implementation of DCA was done through a message passing algorithm. This algorithm was computationally costly as it was based on a slowly converging iterative scheme@weigt2009. In this paper, we will explore the innovations in models using the DCA framework following its conception.
+The problem with this approach is that learning the interaction parameter $J_(i j)$ from observations is a nontrivial inference problem. It requires an evaluation of the partition function $Z$, whose number of terms grows exponentially as the number of sequences grows ($q^L$). The distinct implementations of DCA introduce approximations to bypass this complex computation. The first implementation of DCA was done through a message passing algorithm. This algorithm was computationally costly as it was based on a slowly converging iterative scheme@weigt2009. In this paper, we will explore some important innovations in models using the DCA framework following its conception.
 
 = Evolution of DCA Methods
 
 == Mean-field DCA (2011)
-The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. (2011), provides a computationally feasible approximation of the Potts model used to disentangle direct from indirect correlations in multiple sequence alignments. mfDCA's method includes reweighing the sequences, using maximum entropy formulation of the distribution, and a small-coupling expansion to reduce the inference problem to the inversion of the correlation matrix@morcos2011.
+The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. (2011), provides a computationally feasible approximation of the Potts model used to disentangle direct from indirect correlations in multiple sequence alignments. mfDCA's method includes reweighing the sequences, using maximum entropy formulation of the distribution, and a small-coupling expansion to reduce the inference problem to the inversion of the correlation matrix@mfDCA.
 
 === Method
 The authors found the raw frequency counts to be suffering from sampling bias, so the weight of highly similar sequences was reduced. Each sequence $A^a$ is assigned a weight
@@ -263,18 +260,72 @@ Residue pairs are ranked by $"DI"_(i j)$, and the top-scoring pairs are predicte
 While mfDCA represented a breakthrough in usability of these models, it relies on approximations that impose limitations:
 - Weak coupling assumptions: the small-coupling expasion assumes nearly linear correlations, which can underestimate strong epistatic effects in proteins. {add in-text}
 - Computational scaling: the inversion of the correlation matrix scales as $cal(O)(((q-1)L)^3)$, which is costly for very large MSAs.
-- Pseudocount dependence: the algorithm requires strong pseudocount regularization, and the choice of $lambda$ significantly affects performance.
+- Pseudocount dependence: due to the algorithm's vast parameter size (around $400N^2$) strong regularization is required. This makes the choice of the pseudocount $lambda$ significantly affect performance.
 
-== Pseudo-likelihood Maximization DCA
+== Pseudo-likelihood Maximization DCA (2013)
+The pseudolikelihood maximization DCA (plmDCA) algorithm replaces the intractable full-likelihood fit of the Potts model (which earlier methods approximated) with a tractable product of conditional likelihoods. Concretely, the inverse Potts problem on an alignment of length $L$ becomes $L$ coupled multinomial logistic regressions rather than a single optimization over the global partition function.
 
 === Method
-In the plmDCA, the full likelihood is replaced with conditional likelihoods:
+We retain the Potts parametrization of fields and couplings introduced in @potts. To mitigate redundacy, sequences are reweighted using an identity threshold $x in [0.8, 0.9]$: for sequence $b$, let
 $
-  log P(bold(S)) arrow sum_i log P(s_i | bold(S_( \\ i)))
+  w_b = 1 / m_b, quad "with" m_b = |{a: "sim"(sigma^((a)),sigma^((b)))>=x}|,
 $
-Each conditional distribution does not require the difficult to compute partition function $Z$
+and define the effective sample size $B_"eff" = sum_(b=1)^B w_b$.
 
-This model is widely used in practice due to its feasible and scalable optimization.
+The pivotal idea is to optimize pseudolikelihoods. For site $r$, the conditional distribution given all other sites $sigma_(\\ r)$ is
+$
+  P(sigma_r = l | sigma_(\\ r)) = (exp(h_r (l)+sum_(i!=r)J_(r i)(l, sigma_i))) / (sum_(k=1)^q exp(h_r (k)+sum_(i!=r)J_(r i)(k, sigma_i)))).
+$
+The weighted sitewise negative log-pseudolikelihood is
+$
+  g_r (h_r, J_r) = - 1 / B_"eff" sum_(b=1)^B w_b log P(sigma_r = sigma_r^((b))|sigma_(\\r) = sigma_(\\r)^((b))).
+$
+and the global objective aggregates these points:
+$
+  cal(L)_"pseudo"(h, J) = sum_(r=1)^L g_r(h_r, J_r).
+$
+
+To curtail overfitting, we add convex $l_2$ penalties,
+$
+  R_(cal(l)_2) = lambda_h sum_(r=1)^N ||h_r||_2^2 + lambda_J sum_(1 <=i < j <=N) ||J_(i j)||_2^2
+$
+and minimize
+$
+  {h^"PLM", J^"PLM"} = arg min_(h, J) {cal(l)_"pseudo" (h, J) + R_(cal(l)_2) (h, J)}
+$
+The $cal(l)_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters. For scoring we convert couplings to the zero-sum gauge,
+$
+  J'_(i j) (k, l) = J_(i j) (k, l) - J_(i j) (dot, l) - J_(i j) (k, dot) + J_(i j) (dot, dot),
+$
+where ""$dot$"" denotes an average over the alphabet.
+
+Each $g_r$ is precisely the loss of a multinomial logistic regression (softmax): classes are the $q$ states of $sigma_r$; features are one-hot encodings of ${sigma_i}_(i!=r)$ with $(L-1)(q-1)$ degrees of freedom after dropping a reference state. Hence plmDCA is implemented as $L$ independent, weighted softmax problems with $cal(L)_2$ penalty (e.g. solved with L-BFGS or mini-batch SGD). Two variants are used in practice: asymmetric PLM, which fits each independently and then symmetrizes averaging:
+$
+  hat(J)_(i j) <- 1/2(J_(i j)^((i))+J_(i j)^((j)))
+$
+and symmetric (joint) PLM, which minimizes $cal(L)_"pseudo"$ over all parameters at once.
+
+For pair scoring, plmDCA avoids $"DI"$ as it would introduce a third regularization for the pseudocounts. Instead it,
+(i) converts to zero-sum gauge $J'_(i j)$; (ii) computes the Frobenius norm 
+$
+  S_(i j)^"FN" = (sum_(k,l=1)^q (J'_(i j)(k,l))^2)^(1/2);
+$
+(iii) applies Average Product Correction (APC) to reduce background/phylogenetic effects,
+$
+  S_(i j)^"CN" = S_(i j)^"FN" - (S_(i dot)^"FN" S_(dot j)^"FN") / S_(dot dot)^"FN",
+$
+where $S_(i dot)^"FN"$ and $S_(dot j)^"FN"$ are row/column means and $S_(dot dot)^"FN")$ is the grand mean. 
+Residue pairs $(i, j)$ are ranked by $S_(i j)^"CN")$ to predict structural contacts. 
+=== Limitations
+Despite its practical impact, plmDCA remains sensitive to sampling: accurate contact recovery still requires large $B_"eff"$, and sparse or biased MSAs degrade estimates. Phylogenetic and positional bias persist (reweighting and APC help but do not eliminate them), which can inflate false positives.
+
+
+=== Fast plmDCA (2014)
+To make plmDCA deployable at scale, two of the original authors and a third collaborator, revisited the optimization and engineering choices of the paper. In this second version, the joint problem is decomposed into $L$ independent, weighted softmax regressions, one for each site, and he final couplings are made symmetric by averaging 
+$
+  J_(i j) = 1/2 (J_(i j)^((i))+J_(i j)^((j))).
+$
+This reduces per-solve dimensionality and, crucially, enables trivial parallelization across CPU cores or nodes, which is the primary source of time reduction. Furthermore, regularization remains $cal(l)_2$ (with the asymmetric coupling penalty effectively halved relative to the symmetric setting), gauge handling is deferred to a single post-fit shift to the zero-sum gauge for scoring, and the APC-corrected Frobenius norm continues to provide a simple, robust ranking criterion. The result is comparable contact accuracy at a fraction of the runtime, making large families and long sequences tractable in practice.
 
 == Boltzmann Machine DCA
 
