@@ -172,11 +172,12 @@ $
 
 The Potts model simplifies to an Ising model when $q=2$.
 
-
 Putting this together, the probability distribution from the Potts model is written as:
 $
   P(bold(sigma)) = 1 / Z exp(sum_(i=1)^L h_i (sigma_i) + sum_(1 <= i < j <= L) J_(i j)(sigma_i, sigma_j)).
 $ <potts>
+
+An important point of the Potts model--anticipating further exploration--is that it is over-parametrized: many different $(h, J)$ sets define exactly the same distribution. Without a gauge choice, the parameters will not be uniquely identifiable and the norms of $J$ can be misleading, hindering the process of optimization. Some common gauges, which will be explored in detail further, are reference states, zero-sum, and defining it implicitly via regularization.
 
 == Direct Coupling Analysis
 Naively, correlations in the alignment can be capture by covariance, but this simple approach will not be able to separate the direct correlations, arising from structural or functional contacts, and the indirect correlations, which are propagated via other residues. Taking the empirical frequencies as before we can define the covariance matrix:
@@ -221,16 +222,16 @@ where $q=21$ is the amino acid alphabet with the gap symbol, and $lambda$ is a p
 The maximum entropy principle is applied to reproduce the empirical single- and pairwise frequencies. This yields the previously derived Potts model distribution
 
 $
-  P(A_1, ... A_L) = 1 / Z exp(sum_( 1<= i < j <= L) e_(i j) (A_i, A_j) + sum_(i=1) h_i (A_i))
+  P(A_1, ... A_L) = 1 / Z exp(sum_( 1<= i < j <= L) J_(i j) (A_i, A_j) + sum_(i=1) h_i (A_i))
 $ <mfequation>
 with local fields $h_i(A)$ and pairwise couplings $E_(i j) (A, B)$, and partition function
 $
   Z = sum_(A_1, ..., A_L) exp(sum_( 1<= i < j <= L)(A_i, A_j) + sum_(i=1) h_i (A_i))
 $ <mfpartition>
 
-Since the number of free parameters in @mfequation exceeds the number of constraints, multiple equivalent solutions can be found for the fitting. Therefore, the couplings and fields are measured relative to the reference state, typically the last amino acid $A=q$:
+The gauge choice employed in mfDCA is to define a reference state. Typically, it is set as the last amino acid $A=q$. Then we set
 $
-  forall i,j: e_(i j)(A, q) = e_(i j)(q, A) = 0, quad h_i (q) =0
+  forall i,j: J_(i j)(a, q) = J_(i j)(q, a) = h_i (q) = 0
 $
 
 The partition function $Z$ cannot be computed exactly because it requires summing over $q^L$ sequences. To make the problem tractable, mfDCA assumes weak correlations between sites, expanding the exponential  in @mfequation by the Taylor series to first order. This results in the relation found in @corr between the couplings and the connected correlation matrix.
@@ -256,6 +257,7 @@ $
   "DI"_(i j) = sum_(A B)P_(i j)^"(dir)" (A,B)ln (P_(i j)^"(dir)" (A,B) )/ (f_i (A) f_j (B))
 $
 Residue pairs are ranked by $"DI"_(i j)$, and the top-scoring pairs are predicted to be structural contacts.
+
 === Limitations
 While mfDCA represented a breakthrough in usability of these models, it relies on approximations that impose limitations:
 - Weak coupling assumptions: the small-coupling expasion assumes nearly linear correlations, which can underestimate strong epistatic effects in proteins. {add in-text}
@@ -284,7 +286,6 @@ and the global objective aggregates these points:
 $
   cal(L)_"pseudo"(h, J) = sum_(r=1)^L g_r(h_r, J_r).
 $
-
 To curtail overfitting, we add convex $l_2$ penalties,
 $
   R_(cal(l)_2) = lambda_h sum_(r=1)^N ||h_r||_2^2 + lambda_J sum_(1 <=i < j <=N) ||J_(i j)||_2^2
@@ -293,7 +294,7 @@ and minimize
 $
   {h^"PLM", J^"PLM"} = arg min_(h, J) {cal(l)_"pseudo" (h, J) + R_(cal(l)_2) (h, J)}
 $
-The $cal(l)_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters. For scoring we convert couplings to the zero-sum gauge,
+The $cal(l)_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters. For scoring with the Frobenius norm, we convert couplings to the zero-sum gauge,
 $
   J'_(i j) (k, l) = J_(i j) (k, l) - J_(i j) (dot, l) - J_(i j) (k, dot) + J_(i j) (dot, dot),
 $
@@ -327,12 +328,84 @@ $
 $
 This reduces per-solve dimensionality and, crucially, enables trivial parallelization across CPU cores or nodes, which is the primary source of time reduction. Furthermore, regularization remains $cal(l)_2$ (with the asymmetric coupling penalty effectively halved relative to the symmetric setting), gauge handling is deferred to a single post-fit shift to the zero-sum gauge for scoring, and the APC-corrected Frobenius norm continues to provide a simple, robust ranking criterion. The result is comparable contact accuracy at a fraction of the runtime, making large families and long sequences tractable in practice.
 
-== Boltzmann Machine DCA
+== Boltzmann Machine DCA (2021)
+In mfDCA accuracy was traded for speed via the small-coupling inversion; in plmDCA, a product of sitewise conditionals was optimized, avoiding the global partition function. adabmDCA instead proposes a solution closer to the statistical ideal: fitting the full Potts model by maximizing the true likelihood, using Monte Carlo Markov Chains to estimate intractable expectations and an adaptive procedure to keep sampling reliable and efficient. The result is a generative model that (by construction) matches the empirical one- and two-site statistics of the reweighted MSA.
 
 === Method
-Use Monte Carlo sampling from the Potts model to adjust the parameters until the model reproduces the observed single- and pairwise frequencies.
+Let the MSA have length L, and M sequences $bold(sigma) = (sigma_1, ..., sigma_L)$. The maximum-entropy distribution that reproduces chosen moments is the Potts model defined in @potts.
 
-This is the most faithful approach to the original inference problem. Because of this, it is computationally expensive as each gradient step requires expensive sampling. The cost of this model makes it unsuitable for long protein sequences.
+To reduce phylogenetic redundancy, assign each sequence a weight
+$
+  w_mu = 1 / (|{a: "sim"(s^((a)),s^((mu)))>=x}|), quad x approx 0.8, quad M_"eff" = sum_(mu=1)^M w_mu
+$
+
+Empirical frequencies are then reweighted and smoothed with pseudocount $lambda$ as
+$
+  f_i (a) = (1 - lambda) f_i^"data"(a) + lambda / q, quad f_(i j)(a,b) = (1- lambda)f_(i j)^"data"(a, b)+ lambda/q^2
+$
+$
+  f_i^"data" (a) = 1/M_"eff" sum_mu w_mu delta(sigma_i^((mu)), a), quad f_(i j)^"data" (a, b) = 1/M_"eff" sum_mu w_mu delta(sigma_i^((mu)), a) (sigma_j^((mu)), b)
+$
+
+A practical starting point for the system is the profile model $J equiv 0$, and $h_i^"prof"(a) = log f_i (a) + "const"$, which already matches the one-site frequencies. In addition, zero or user-provided initial parameters can also work.
+
+*Likelihood and moment matching*
+
+The average log-likelihood of the MSA under $P(dot|J,h)$ is
+$
+  cal(L)(J, h) = 1/M sum_(mu=1)^M [sum_i h_i (sigma_i^((mu))) + sum_(i<j) J_(i j) (sigma_i^((mu)), sigma_j^((mu)))]-log Z(J, h).
+$
+As an exponential-family model, $cal(L)$ is concave in the natural parameters, so gradient ascent converges to the unique optimum. The gradients are moment gaps:
+$
+  (partial cal(L)) / (partial h_i (a)) = f_i (a) - p_i (a), quad (partial cal(L)) / (partial J_(i j) (a,b)) = f_(i j) (a,b) - p_(i j) (a, b),
+$
+where $p_i$ and $p_(i j)$ are model marginals under current $(J, h)$. Hence the update
+$
+  h_i^(t+1)(a) = h_i^t (a) + eta_h [f_i (a) - p_i^((t))(a)], \
+  J_(i j)^(t+1)(a, b) = J_(i j)^t (a, b) + eta_J [f_(i j) (a, b) - p_(i j)^((t))(a, b)].
+$
+drives the model toward exact moment matching f = p.
+The obstacle is that $p_i$ and $p_(i j)$ are not analytically accessible at scale; adabmDCA estimates them by MCMC at each epoch.
+
+*Estimating model expectations via adaptive MCMC*
+
+At training epoch $t$, run $N_s$ independent Markov chains, using Metropolis-Hastings @mh-algorithm or Gibbs @gibbs-algorithm, each producing $N_c$ samples after an equilibration period $T_"eq"$ and with an inter-sample waiting time $T_"wait"$. The Monte Carlo estimators are
+$
+  p_i^((t)) (a) = 1/(N_s N_c) sum_(nu=1)^(N_s N_c) delta(sigma_i^((nu))(t), a), \ p_(i j)^((t)) (a, b) = 1/(N_s N_c) sum_(nu=1)^(N_s N_c) delta(sigma_i^((nu))(t), a) delta(sigma_j^((nu))(t), b).
+$
+Chains may be transient, reinitialized every epoch, or persistent, warm-started from the previous epoch. Equilibration is often sped up through persistence of chains.
+
+*Convergence and quality control*
+
+A practical stopping criterion is the maximum covariance discrepancy
+$
+  epsilon_c = max_(i,j,a,b) |c_(i j)^"model"(a,b)-c_(i j)^"emp"(a,b)|, quad c_(i j)^"model" = p_(i j)-p_i p_j, quad c_(i j)^"emp" = f_(i j)-f_i f_j
+$
+with a target $epsilon_c approx 10^-2$ In addition to this, some other commonly used diagnostics is the Pearson correlation between $c^"model"$ and $c^"emp"$, one- and two-site fitting errors, and optionally, a third connected correlation on a subset of triples is used to assess generative fidelity beyond pairwise constraints.
+
+*Priors and sparsity*
+
+A fully connected Potts model has $~ (L(L-1))/2 q^2 + L q$, meaning a number in the order of $10^7$-$10^9$ parameters  for a realistic $L$ @adabmDCA. Due to the finite sample size of MSAs, they rarely contain enough independent information to estimate all of them robustly. Without controlling this uncertainty, the consequences could be overfitting, high variance or instability, and bad conditioning in the model. To address these issues, adabmDCA employs two complementary strategies:
+First, we can place a prior on $P(J, h)$ and maximize the posterior, equivalent to adding penalties to the objective. The two standard choices are the $cal(l)_1$ and $cal(l)_2$ priors:
+$
+  R_(cal(l)_1) (J, h) = theta_(1, h) sum_i ||h_i||_1 + theta_(1, J) sum_(i<j)||J_(i j)||_1 \
+  R_(cal(l)_2) (J, h) = theta_(2, h) sum_i ||h_i||_2^2 + theta_(2, J) sum_(i<j)||J_(i j)||_2^2
+$
+Under $cal(l)_2$, the gradients are shrunk toward zero:
+$
+  partial / (partial h_i (a)) : f_i (a) - p_i (a) - theta_(2,h) h_i (a), \ partial / (partial J_(i j) (a,b)) : f_(i j) (a, b) - p_(i j) (a, b) - theta_(2,h) J_(i j) (a,b). 
+$
+Under $cal(l)_1$, they include subgradient terms that promote exact zeros.
+$
+  partial / (partial h_i (a)) : f_i (a) - p_i (a) - theta_(1,h) "sign"(h_i (a)), \ partial / (partial J_(i j) (a,b)) : f_(i j) (a, b) - p_(i j) (a, b) - theta_(1,h) "sign"(J_(i j) (a,b)). 
+$
+The result is that $cal(l)_2$ reduces variance and improves conditioning by smoothly shrinking all parameters. It also selects a unique gauge and tends to preserve the relative ordering of strong couplings. On the other hand, $cal(l)_1$ induces sparsity by zeroing weak parameters, also reducing overfitting, though at a cost of biasing small effects downward. Generally, in stochastic settings, an elastic-net mix is used (a combination of both parameters), that stabilizes training near zero. In practice a separate parameter is used for fields and couplings, typically regularizing $J$ more strongly than $h$.
+
+The second method is introducing sparsity via pruning or decimation. The reason for this is that true contact maps in nature are indeed sparse; most residue pairs are not in direct physical contact. Encoding this structural prior can reduces variance and speed up learning. There are two approaches:
++ A priori topology. Reduce the number of parameters by starting from a restricted edge set, for example pairs with high MI, and learn only those $J_(i j)$, omitting the rest.
++ Information-based decimation. In this approach, start dense and iteratively remove the least informative couplings until target sparsity. This can be done by comparing the KL divergence for a candidate element. This directly controls overfitting by only keeping the paramets that actually affect the model's predictions.
+In short, pruning and decimation prevent overfitting by removing parameters that don't materially alter the model, and have the added benefit of aligning with the biological prior of contact sparsity.
+
 
 == Autoregressive Network DCA
 
@@ -387,4 +460,6 @@ $
   Z(mu) = sum_i e^( -mu f(x_i))", thus" \
   e^(-lambda)Z(mu) = 1 => lambda = ln Z(mu)
 $
+
+= Appendix 2 <app2>
 
