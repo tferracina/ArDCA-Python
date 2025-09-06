@@ -72,7 +72,7 @@ The study of evolutionary history and relationships among biological entities is
 == Multiple sequence alignments
 To extract important evolutionary clues from protein families, the homologous sequences need to be organized in a systematic way. This is done through a multiple sequence alignment (MSA), in which three or more sequences are arranged so that homologous sites are placed in the same column @WILTGEN201938. To maximise the positional correspondence of sequences with varied length, alignment gaps are introduced when necessary. 
 
-Multiple sequence alignments reveal patterns of conservation and variation across the family. Conserved positions, those which are unchanged in multiple sequences, represent sites that are critical for maintaining structure or function, while variable positions indicate sites that can tolerate mutations without disruption to the protein. Beyond conservation, MSAs also capture covariation: pairs of positions that mutate in a correlated way across sequences. These covariation signals reflect couplings, where a mutation at one site requires compensation at another to maintain protein integrity @adhikari2016.
+Multiple sequence alignments reveal patterns of conservation and variation across the family. Conserved positions, those which are unchanged in multiple sequences, represent sites that are critical for maintaining structure or function, while variable positions indicate sites that can tolerate mutations without disruption to the protein. Beyond conservation, MSAs also capture covariation: pairs of positions that mutate in a correlated way across sequences. These covariation signals reflect couplings, where a mutation at one site requires compensation at another to maintain protein integrity @biom14121531.
 
 
 == Protein contacts
@@ -108,9 +108,9 @@ $
 The empirical frequencies will serve as constraints for the distribution we want to infer.
 
 == Maximum Entropy Principle
-To find the probability distribution $P(bold(sigma))$ that will satisfy constraints, in other words reproduce the empirical marginals $f_i (A)$ and $f_(i j) (A, B)$, we can use the maximum entropy principle@MITinfent.
+To find the probability distribution $P(bold(sigma))$ that will satisfy constraints, in other words reproduce the empirical marginals $f_i (A)$ and $f_(i j) (A, B)$, we can use the maximum entropy principle@Jaynes1957a @Jaynes1957b.
 
-The first step to set up the MEP, is extracting information from the system. Usually, this information is given in the form of averages of functions $angle.l f_k (x) angle.r$. For example, in a physical system, one could compute average magnetization or energy of the observed system. We also need to define a probability of occupancy of states, $p(x)$, which runs over all the possible states. This distribution has the usual property of mapping each state to a value within 0 and 1 and adding up to 1 when considering all states. 
+The first step to set up the MEP, is extracting information from the system. Usually, this information is given in the form of averages of functions $angle.l f_k (x) angle.r$. For example, in a physical system, one could compute average magnetization or energy of the observed system. We also need to define a probability of occupancy of states, $p(x)$, which runs over all the possible states. This distribution has the usual property of mapping each state to a value within 0 and 1 and adding up to 1 when considering all states @MITinfent.
 
 Our uncertainty on the system is expressed quantitatively through Shannon entropy $S$@Shannon1948:
 $
@@ -121,7 +121,7 @@ $
   sum_x p(x) = 1, quad "and" quad sum_x p(x) f_k (x) = angle.l f_k angle.r quad (k = 1, ..., m).
 $ <constraints>
 
-Selecting Shannon entropy as our measure of information, we can introduce Lagrange Multipliers $lambda_0, lambda_1, ... lambda_m$ to maximize @entropy subject to the constraints @constraints, yielding @Jaynes1957:
+Selecting Shannon entropy as our measure of information, we can introduce Lagrange Multipliers $lambda_0, lambda_1, ... lambda_m$ to maximize @entropy subject to the constraints @constraints, yielding:
 $
   p(x) = exp(-lambda_0 - sum_(k=1)^m lambda_k f_k (x)).
 $
@@ -156,11 +156,11 @@ where $J$ is the coupling constant calculated over nearest-neighbor pairs (repre
 
 At thermal equilibrium, the probability of a configuration is given by the Boltzmann distribution:
 $
-  P({sigma}) = 1 / Z e^(-beta H({sigma})),
+  P({sigma}) = 1 / Z exp(-beta H_"Ising" ({sigma})),
 $
 with $beta = 1 \/ (k_b T)$ and partition function
 $
-  Z = sum_({sigma}) e^(-beta H({sigma})).
+  Z = sum_({sigma}) exp(-beta H_"Ising" ({sigma})).
 $
 
 === Potts Model
@@ -170,45 +170,40 @@ $
 $
 $J$ again represents the ferromagnetic coupling that encourages neighboring spins to align in the same state. The partition function becomes
 $
-  Z = sum_({sigma}) exp(beta J sum_(angle.l i, j angle.r) delta(sigma_i, sigma_j)).
+  Z = sum_({sigma}) exp(-beta H_"Potts" ({sigma})).
 $
 
 The Potts model simplifies to an Ising model when $q=2$.
 
 Putting this together, the probability distribution from the Potts model is written as:
 $
-  P(bold(sigma)) = 1 / Z exp(sum_(i=1)^L h_i (sigma_i) + sum_(1 <= i < j <= L) J_(i j)(sigma_i, sigma_j)).
-$ <potts>
+  P(bold(sigma)) = 1 / Z exp(-beta H_"Potts" ({sigma})).
+$
 
 It is important to note--anticipating further exploration--that the Potts model is over-parametrized: many different $(h, J)$ sets define exactly the same distribution. Without a gauge choice, the parameters will not be uniquely identifiable and the norms of $J$ can be misleading, hindering the process of optimization. Some common gauges, which will be explored in detail further, are reference states, zero-sum, and defining it implicitly via regularization.
 
 == Direct Coupling Analysis
-Naively, correlations in the alignment can be captured by covariance, but this simple approach will not be able to separate the direct correlations, arising from structural or functional contacts, and the indirect correlations, propagated via other residues. With empirical frequencies as before, we can define the covariance matrix:
-$
-  C_(i j)(A,B)=f_(i j) (A,B) - f_i (A)f_j (B).
-$ <corr>
-A positive $C_(i j)(A, B)$ means that $A$ at $i$ and $B$ at $j$ co-occur more often than expected by chance. The reverse is true for a negative value, where the residues occur less often than expected. The covariance matrix is computed across the whole alignment, and it contains crucial information about pairwise correlations between residues.
+The statistical dependencies observed in MSAs encode important information about protein structure and function. However, naive measures such as covariance cannot distinguish between direct correlations, which arise from true physical or functional contacts, and indirect correlations, propagated via other residues. Direct Coupling Analysis (DCA) addresses this problem by introducing an explicit generative model for the sequences.
 
-From here, all classical DCA methods use the previously defined tools and assume that the rows of the MSAs are independent events drawn from a Potts-model distribution,
-
+DCA assumes that sequences in the MSA are independent realizations of a Potts model distribution:
 $
-  P(bold(sigma)) = 1 / Z exp(sum_(i) h_i (sigma_i) + sum_(i < j) J_(i j)(sigma_i, sigma_j))
-$
-where the local field represents the single-column, and the couplings represent the column pairs.  
+  P(bold(sigma)) = 1 / Z exp(sum_i h_i (sigma_i) + sum_(i<j) J_(i j) (sigma_i, sigma_j))
+$ <potts>
+where $h_i$ are site-specific fields and $J_(i j)$ are coupling parameters between residue pairs. The central goal of DCA is to infer the interaction parameters $J_(i j)$ that best explain the observed single- and pairwise frequencies.
 
-The goal, fitting the Potts model, is defined, but the difficulty of this approach lies in the nontrivial inference problem of learning the interaction parameter $J_(i j)$. It requires an evaluation of the partition function $Z$, whose number of terms grows exponentially as the number of sequences grows ($q^L$). The distinct implementations of DCA introduce approximations to bypass this complex computation. The first implementation of DCA, a computationally costly message passing algorithm, was based on a slowly converging iterative scheme@weigt2009. In this paper, we will explore some important innovations in models using the DCA framework following its conception.
+In practice, direct inference of these parameters is computationally challenging. Evaluating the partition function $Z$ is intractable for realistic proteins, as it requires summing over $q^L$ possible sequences. Thus, distinct implementations of DCA introduce approximations to bypass this computation. The original message passing implementation @weigt2009, directly attempted to solve for couplings through a slowly converging iterative scheme, making it inapplicable in practice. In this paper, we will explore some important algorithmnic innovations in DCA following its conception.
 
 = Evolution of DCA Methods
 
 == Mean-field DCA (2011)
-The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. (2011), provided the first computationally feasible approximation of the Potts model to disentangle direct from indirect correlations in MSAs. mfDCA uses a small-coupling expansion to reduce the inference problem to the inversion of the correlation matrix@mfDCA.
+The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. @mfDCA, provided the first computationally feasible approximation of the Potts model. The idea is to approximate weak correlations via a small-coupling expansion, which reduces the inference problem to the inversion of a correlation matrix.
 
 === Method
 To begin, the raw frequency counts suffer from sampling bias, so the weight of highly similar sequences is reduced. Each sequence $A^a$ is assigned a weight
 $
   m^a = |{b in{1, ..., M}|"sim"(A^a,A^b) > x}|, quad x approx 0.8
 $
-where M is the number of sequences in the MSA and sim is their similarity #footnote[The original paper used "seqid" to represent percentage identity. We chose "sim" as the future methods used this notation.]. The effective weight of a sequence $a$ is $1 \/ m^a$, and the total effective number of sequences is
+where M is the number of sequences in the MSA and sim is their similarity #footnote[The original paper used "seqid" to represent percentage identity. We chose "sim" as the future methods adopted this notation.]. The effective weight of a sequence $a$ is $1 \/ m^a$, and the total effective number of sequences is
 $
   M_("eff") = sum_(a=1)^M 1 \/ m^a.
 $
@@ -222,49 +217,41 @@ $
 $
 where $q=21$ is the amino acid alphabet with the gap symbol, and $lambda$ is a pseudocount parameter used for regularization.
 
-The maximum entropy principle is applied to reproduce the empirical single- and pairwise frequencies. This yields the previously derived Potts model distribution
-
-$
-  P(A_1, ... A_L) = 1 / Z exp(sum_( 1<= i < j <= L) J_(i j) (A_i, A_j) + sum_(i=1) h_i (A_i))
-$ <mfequation>
-with local fields $h_i(A)$ and pairwise couplings $J_(i j) (A, B)$, and partition function
-$
-  Z = sum_(A_1, ..., A_L) exp(sum_( 1<= i < j <= L)(A_i, A_j) + sum_(i=1) h_i (A_i))
-$ <mfpartition>
-
 The gauge choice employed in mfDCA is defining a reference state. Typically, it is set as the last amino acid $A=q$. This gives us
 $
   forall i,j: J_(i j)(a, q) = J_(i j)(q, a) = h_i (q) = 0
 $
 
-To circumvent the intractable $Z$ computation, mfDCA assumes weak correlations between sites, expanding the exponential  in @mfequation by the Taylor series to first order. This results in the relation found in @corr between the couplings and the connected correlation matrix.
-
-The couplings are then approximated as
+To circumvent the intractable $Z$ computation, mfDCA assumes weak correlations between sites, expanding the exponential in @potts by the Taylor series to first order@plefka1982 @georges1991. This results in the relation
+$
+  C_(i j)(A,B)=f_(i j) (A,B) - f_i (A)f_j (B).
+$ <corr>
+between the couplings and the connected correlation matrix. The couplings are then approximated as
 $
   e_(i j) (A, B) = - (C^(-1))_(i j)(A,B),
 $
-where $C$ is treated as a $((q-1)L) crossmark ((q-1)L)$ matrix, and the pair $(i, A)$ is regarded as a single index.
+where $C$ is treated as a $((q-1)L) crossmark ((q-1)L)$ matrix, and the pair $(i, A)$ is regarded as a single index. The full derivation can be found in @app2.
 
 In practice, the correlation matrix is often singular without regularization. mfDCA opts to use a strong pseudocount ($lambda approx M_"eff"$) to stabilize the inversion and prevent spurious large couplings.
 
-Once the couplings are inferred, the next step is to rank residue pairs by their likelihood of physical contact. For each pair $(i, j)$, a two-site model is constructed:
+Once the estimate of the pair couplings $e_(i j) (A,B)$ is inferred, we need a way to rank residue pairs by their interaction strength. The $(q-1) crossmark (q-1)$-dimensional coupling matrices need to map to a single scalar parameter. We can do this through the direct information (DI) @weigt2009. To begin, for each pair $(i, j)$ a two-site model is constructed:
 $
-  P_(i j)^"(dir)" (A,B) = 1 / Z_(i j) exp( e_(i j) (A,B) + tilde(h_i) (A) + tilde(h_j) (B)),
+  P_(i j)^"(dir)" (A,B) = 1 / Z_(i j) exp( e_(i j) (A,B) + tilde(h)_i (A) + tilde(h)_j (B)),
 $
-with auxiliary fields $tilde(h_i), tilde(h_j)$ chosen such that
+with auxiliary fields $tilde(h)_i, tilde(h)_j$ chosen such that
 $
-  sum_B P_(i j)^"(dir)" (A,B) = f_i(A), quad sum_A P_(i j)^"(dir)" (A,B) = f_j(B).
+  sum_(B=1)^q P_(i j)^"(dir)" (A,B) = f_i (A), quad sum_(A=1)^q P_(i j)^"(dir)" (A,B) = f_j (B).
 $
-The metric used to rank residue pairs is Direct Information (DI). It is defined as the mutual information of this two-site distribution:
+The direct information is the mutual information associated to this distribution:
 $
-  "DI"_(i j) = sum_(A B)P_(i j)^"(dir)" (A,B)ln (P_(i j)^"(dir)" (A,B) )/ (f_i (A) f_j (B))
+  "DI"_(i j) = sum_(A,B=1)^q P_(i j)^"(dir)" (A,B)ln (P_(i j)^"(dir)" (A,B) )/ (f_i (A) f_j (B))
 $
 The top-scoring pairs are predicted to be structural contacts.
 
 === Limitations
 While mfDCA represented a breakthrough in usability of DCA, the simplifying approximations impose limitations on the model:
 - Weak coupling assumptions: the small-coupling expasion assumes nearly linear correlations, which can underestimate strong epistatic effects in proteins. {add in-text}
-- Computational scaling: the inversion of the correlation matrix scales as $cal(O)(((q-1)L)^3)$, which is costly for very large MSAs.
+- Computational scaling: the inversion of the correlation matrix scales as $cal(O)(L)^3$, which is costly for very large MSAs.
 - Pseudocount dependence: due to the algorithm's vast parameter size (around $400N^2$) strong regularization is required. This makes the choice of the pseudocount $lambda$ significantly affect performance.
 
 == Pseudo-likelihood Maximization DCA (2013)
@@ -466,5 +453,52 @@ $
   e^(-lambda)Z(mu) = 1 => lambda = ln Z(mu)
 $
 
-= Appendix 2 <app2>
+= Small Coupling Mean-Field Derivation <app2>
+#counter(math.equation).update(0)
+Start with the perturbed Hamiltonian
+$
+  cal(H)(alpha) = -alpha sum_(1 <= i < j <= L) e_(i j) (A_i, A_j) - sum_(i=1)^L h_i (A_i)
+$
+which allows interpolation between independent couplings, $alpha = 0$, and the original model, $alpha = 1$. We also define the Gibbs potential
+$
+  -cal(G)(alpha) = ln[sum_({A_i|i=1,...,L})e^(-cal(H)(alpha))]-sum_(i=1)^L sum_(B=1)^(q-1)h_i (B) P_i (B)
+$ <gibbspotential>
+as the Legendre transform of the free energy $cal(F) = -ln Z$. The fields can be found via 
+$
+  h_i (A) = (partial cal(G) (alpha)) / ( partial P_i (A) ),
+$
+and
+$
+  (C^(-1))_(i j) (A, B) = (partial h_i (A)) / (partial P_j (B)) = (partial^2 cal(G)(alpha)) / (partial P_i (A) partial P_j (B)).
+$
+Our aim is to expand the Gibbs potential up to first order around the independent-site case $alpha=0$,
+$
+  cal(G)(alpha) = cal(G)(0) + lr((d cal(G)(alpha)) / (d alpha) |)_(alpha = 0) alpha + cal(O)(alpha^2)
+$ <gibbsalpha>
+*Independent-site approximation* \
+To start, let us consider the Gibbs potential in $alpha=0$. In this case, the Gibbs potential equals the negative entropy of an ensemble of $L$ uncoupled Potts spins,
+$
+  cal(G)(0) &= sum_(i=1)^L sum_(A=1)^q P_i (A) ln P_i (a) \
+  &= sum_(i=1)^L sum_(A=1)^(q-1) P_i (A) ln P_i (a) + sum_(i=1)^L [1-sum_(A=1)^(q-1) P_i (A)]ln[1- sum_(A=1)^(q-1) P_i (A)]
+$ <g0>
 
+*Mean-field approximation* \
+To get the first order in @gibbsalpha, we have to determine the derivative at $alpha=0$. Recalling the definition of Gibbs potential in @gibbspotential, 
+$
+  (d cal(G)(alpha)) / (d alpha) &= (-d) / (d alpha) ln Z (alpha) - sum_(i=1)^L sum_(A=1)^(q-1) (d h_i (A)) / (d alpha) P_i (A) \ 
+  &= -sum_({A_i})[sum_(i<j)e_(i j) (A_i, A_j )+sum_i (d h_i (A)) / (d alpha)](e^(-cal(H)(alpha)))/Z(alpha) - sum_(i=1)^L sum_(A=1)^(q-1) (d h_i (A)) / (d alpha) P_i (A) \ 
+  &= - lr(angle.l sum_(i<j) e_(i j) (A_i, A_j)angle.r)_alpha
+$
+The first derivative of the Gibbs potential with respect to $alpha$ this is the average of the coupling term in the Hamiltonian. At $alpha=0$, this average can be done easily due to the joint distribution of all variables becoming factorized over the single sites,
+$
+  lr((d cal(G)(alpha)) / (d alpha) |)_(alpha = 0) = -sum_(i<j) sum_(A,B)e_(i j) (A_i, A_j)P_i (A) P_j (B).
+$
+Plugging this and @g0 into @gibbsalpha, we find the first-order approximation of the Gibbs potential. The first and second partial derivatives with respect to $P_i (A)$ provide self-consistent equations for the local fields,
+$
+  (P_i (A)) / (P_i (q)) = exp( h_i (A) + sum_({j|j!=i}) sum_(B=1)^(q-1) e_(i j) (A, B) P_j (B))
+$
+and the inverse of the connected correlation matrix,
+$
+  lr((C^(-1))_(i j) (A, B)|)_(alpha=0) = cases(-e_(i j) (A, B) "for" i != j, (delta(A,B))/(P_i (A)) + 1/(P_i (q)) "for" i=j ) quad .
+$
+This equation allows us to solve the original inference in the mean-field approximation in a single step. To determine the marginals of the empirical freqiencies, we just need to determine the empirical connected correlation matrix and invert it to get the couplings $e_(i j)$. 
