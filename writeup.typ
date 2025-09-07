@@ -360,7 +360,11 @@ $
   f_i^"data" (a) = 1/M_"eff" sum_mu w_mu delta(sigma_i^((mu)), a), quad f_(i j)^"data" (a, b) = 1/M_"eff" sum_mu w_mu delta(sigma_i^((mu)), a) (sigma_j^((mu)), b)
 $
 
-A practical starting point for the system is the profile model $J equiv 0$, and $h_i^"prof"(a) = log f_i (a) + "const"$, which already matches the one-site frequencies. In addition, zero or user-provided initial parameters can also work.
+A practical starting point for the system is the profile model, an independent-site Potts model where the first empirical moments are matched by means of the fields,
+$
+  h_i^"prof" (a) = log f_i (a) + "const",
+$ 
+but all couplings are set to zero $ J equiv 0$. In addition, zero or user-provided initial parameters can also work.
 
 *Likelihood and moment matching*
 
@@ -374,35 +378,35 @@ $
 $
 where $p_i$ and $p_(i j)$ are model marginals under current $(J, h)$. Hence the update
 $
-  h_i^(t+1)(a) = h_i^t (a) + eta_h [f_i (a) - p_i^((t))(a)], \
-  J_(i j)^(t+1)(a, b) = J_(i j)^t (a, b) + eta_J [f_(i j) (a, b) - p_(i j)^((t))(a, b)].
+  h_i^(t+1)(a) <- h_i^t (a) + eta_h [f_i (a) - p_i^((t))(a)], \
+  J_(i j)^(t+1)(a, b) <- J_(i j)^t (a, b) + eta_J [f_(i j) (a, b) - p_(i j)^((t))(a, b)].
 $
 drives the model toward exact moment matching f = p.
-The obstacle is that $p_i$ and $p_(i j)$ are not analytically accessible at scale; adabmDCA estimates them by MCMC at each epoch.
+The obstacle is that $p_i$ and $p_(i j)$ are not analytically computable at scale; adabmDCA estimates them by MCMC at each epoch.
 
 *Estimating model expectations via adaptive MCMC*
 
-At training epoch $t$, run $N_s$ independent Markov chains, using Metropolis-Hastings @mh-algorithm or Gibbs @gibbs-algorithm, each producing $N_c$ samples after an equilibration period $T_"eq"$ and with an inter-sample waiting time $T_"wait"$. The Monte Carlo estimators are
+At training epoch $t$, run $N_s$ independent Markov chains using Metropolis-Hastings @Metropolis1953 @mh-algorithm (Gibbs sampling strategy may also be used @gibbs-algorithm), each producing $N_c$ samples after an equilibration period $T_"eq"$ and with an inter-sample waiting time $T_"wait"$. The Monte Carlo estimators are
 $
-  p_i^((t)) (a) = 1/(N_s N_c) sum_(nu=1)^(N_s N_c) delta(sigma_i^((nu))(t), a), \ p_(i j)^((t)) (a, b) = 1/(N_s N_c) sum_(nu=1)^(N_s N_c) delta(sigma_i^((nu))(t), a) delta(sigma_j^((nu))(t), b).
+  p_i^((t)) (a) = 1/(N_s N_c) sum_(mu=1)^(N_s N_c) delta(sigma_i^((mu))(t), a), \ p_(i j)^((t)) (a, b) = 1/(N_s N_c) sum_(nu=1)^(N_s N_c) delta(sigma_i^((mu))(t), a) delta(sigma_j^((mu))(t), b).
 $
-Chains may be transient, reinitialized every epoch, or persistent, warm-started from the previous epoch. Equilibration is often sped up through persistence of chains.
+Chains may be transient, reinitialized every epoch, or persistent, initialized only at the first epoch. Equilibration is often sped up through persistence of chains. For more details on the adaptive scheme, refer to @app3.
 
 *Convergence and quality control*
 
-A practical stopping criterion is the maximum covariance discrepancy
+A practical convergence proxy is the differnece between the empriical and the model two-site connected correlations:
 $
-  epsilon_c = max_(i,j,a,b) |c_(i j)^"model"(a,b)-c_(i j)^"emp"(a,b)|, quad c_(i j)^"model" = p_(i j)-p_i p_j, quad c_(i j)^"emp" = f_(i j)-f_i f_j
+  epsilon_c = max_(i,j,a,b) abs(c_(i j)^"model" (a,b)-c_(i j)^"emp" (a,b)) quad"where" \ quad c_(i j)^"model" = p_(i j)-p_i p_j, quad c_(i j)^"emp" = f_(i j)-f_i f_j
 $
 with a target $epsilon_c approx 10^-2$ In addition to this, some other commonly used diagnostics is the Pearson correlation between $c^"model"$ and $c^"emp"$, one- and two-site fitting errors, and optionally, a third connected correlation on a subset of triples is used to assess generative fidelity beyond pairwise constraints.
 
 *Priors and sparsity*
 
-A fully connected Potts model has $~ (L(L-1))/2 q^2 + L q$, meaning a number in the order of $10^7$-$10^9$ parameters  for a realistic $L$ @adabmDCA. Due to the finite sample size of MSAs, they rarely contain enough independent information to estimate all of them robustly. Without controlling this uncertainty, the consequences could be overfitting, high variance or instability, and bad conditioning in the model. To address these issues, adabmDCA employs two complementary strategies:
+A fully connected Potts model has $~ (L(L-1))/2 q^2 + L q$, meaning a number in the order of $10^7$-$10^9$ parameters for a realistic $L$ @adabmDCA. Due to the finite sample size of MSAs, they rarely contain enough independent information to estimate all of them robustly. Not controlling this uncertainty could lead to overfitting, high variance or instability, and bad conditioning in the model. To address these issues, adabmDCA employs two complementary strategies.
 First, we can place a prior on $P(J, h)$ and maximize the posterior, equivalent to adding penalties to the objective. The two standard choices are the $cal(l)_1$ and $cal(l)_2$ priors:
 $
-  R_(cal(l)_1) (J, h) = theta_(1, h) sum_i ||h_i||_1 + theta_(1, J) sum_(i<j)||J_(i j)||_1 \
-  R_(cal(l)_2) (J, h) = theta_(2, h) sum_i ||h_i||_2^2 + theta_(2, J) sum_(i<j)||J_(i j)||_2^2
+  R_(cal(l)_1) (J, h) = theta_(1, h) sum_i norm(h_i)_1 + theta_(1, J) sum_(i<j) norm(J_(i j))_1 \
+  R_(cal(l)_2) (J, h) = theta_(2, h) sum_i norm(h_i)_2^2 + theta_(2, J) sum_(i<j)norm(J_(i j))_2^2
 $
 Under $cal(l)_2$, the gradients are shrunk toward zero:
 $
@@ -412,7 +416,7 @@ Under $cal(l)_1$, they include subgradient terms that promote exact zeros.
 $
   partial / (partial h_i (a)) : f_i (a) - p_i (a) - theta_(1,h) "sign"(h_i (a)), \ partial / (partial J_(i j) (a,b)) : f_(i j) (a, b) - p_(i j) (a, b) - theta_(1,h) "sign"(J_(i j) (a,b)). 
 $
-The result is that $cal(l)_2$ reduces variance and improves conditioning by smoothly shrinking all parameters. It also selects a unique gauge and tends to preserve the relative ordering of strong couplings. On the other hand, $cal(l)_1$ induces sparsity by zeroing weak parameters, also reducing overfitting, though at a cost of biasing small effects downward. Generally, in stochastic settings, an elastic-net mix is used (a combination of both parameters), that stabilizes training near zero. In practice a separate parameter is used for fields and couplings, typically regularizing $J$ more strongly than $h$.
+$cal(l)_2$ reduces variance and improves conditioning by smoothly shrinking all parameters. It selects a unique gauge and tends to preserve the relative ordering of strong couplings. On the other hand, $cal(l)_1$ induces sparsity by zeroing weak parameters, also reducing overfitting, though at a cost of biasing small effects downward. Generally, in stochastic settings, elastic-net is used (a combination of both parameters), that stabilizes training near zero. In addition, a separate parameter is used for fields and couplings, typically regularizing $J$ more strongly than $h$.
 
 The second method is introducing sparsity via pruning or decimation. The reason for this is that true contact maps in nature are indeed sparse; most residue pairs are not in direct physical contact. Encoding this structural prior can reduces variance and speed up learning. There are two approaches:
 + A priori topology. Reduce the number of parameters by starting from a restricted edge set, for example pairs with high MI, and learn only those $J_(i j)$, omitting the rest.
@@ -523,3 +527,28 @@ $
   lr((C^(-1))_(i j) (A, B)|)_(alpha=0) = cases(-e_(i j) (A, B) "for" i != j, (delta(A,B))/(P_i (A)) + 1/(P_i (q)) "for" i=j ) quad .
 $
 This equation allows us to solve the original inference in the mean-field approximation in a single step. To determine the marginals of the empirical freqiencies, we just need to determine the empirical connected correlation matrix and invert it to get the couplings $e_(i j)$. 
+
+= Adaptive MCMC Sampling in adabmDCA <app3>
+To ensure accurate estimation of the marginals, adabmDCA monitors both equilibration and decorrelation of the Markov chains through sequence overlaps. For two sampled sequences $s^i_n, s^k_m in cal(A)^L$, the normalized overlap is defined as
+$
+  O(s_n^i,s_m^k) = 1/L sum_(j=1)^L delta(s_n^i (j),s_m^k (j))
+$
+Three types of overlaps are used:
+- External overlap ($O_"ext"$): between samples from different chains at the same time $n$.
+- Internal-1 overlap ($O_"int1"$): between consecutive samples of the same chain at times $n$ and $n+1$.
+- Internal-2 overlap ($O_"int2"$): between samples of the same chain at times $n$ and $n+2$.
+At each epoch, adabmDCA computes averages $mu_alpha$ and standard errors $sigma_alpha$ ($alpha in {"ext","int1","int2"}$). In equilibrium, all three overlaps should agree within statistical error.
+*Adaptive update of $T_"wait"$*\
+To control correlation between successive samples, $T_"wait"$ is adjusted dynamically: \
+Increase $T_"wait"$ (double it) if:
+$
+  abs(mu_"ext" - mu_"int2") > 5 sqrt(sigma_"ext"^2+sigma_"int2"^2)
+$
+i.e. samples at lag $2T_"wait"$ are still too correlated.\
+Reduce $T_"wait"$ (average with last pre-increase value) if:
+$
+  abs(mu_"ext" - mu_"int1") < 5 sqrt(sigma_"ext"^2+sigma_"int1"^2)
+$
+i.e. decorrelation already occurs at lag $T_"wait"$. Equilibration time is then set to $T_"eq" = 2 T_"wait"$.
+
+This adaptive scheme ensures that chain samples are equilibrated, initial bias is removed after $T_"eq"$ steps, and decorrelated, independence between samples at lag $T_"wait" - 2T_"wait"$. As a result, the estimated marginals match those of the equilibrium Potts distribution, guaranteeing stable gradient estimates and convergence of the Boltzmann machine.
