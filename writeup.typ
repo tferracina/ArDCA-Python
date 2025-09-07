@@ -226,7 +226,7 @@ To circumvent the intractable $Z$ computation, mfDCA assumes weak correlations b
 $
   C_(i j)(A,B)=f_(i j) (A,B) - f_i (A)f_j (B).
 $ <corr>
-between the couplings and the connected correlation matrix. The couplings are then approximated as
+between the couplings and the connected correlation matrix. The couplings are then approximated as through naive mean-field inversion
 $
   e_(i j) (A, B) = - (C^(-1))_(i j)(A,B),
 $
@@ -244,7 +244,7 @@ $
 $
 The direct information is the mutual information associated to this distribution:
 $
-  "DI"_(i j) = sum_(A,B=1)^q P_(i j)^"(dir)" (A,B)ln (P_(i j)^"(dir)" (A,B) )/ (f_i (A) f_j (B))
+  cal(S)^"DI"_(i j) = sum_(A,B=1)^q P_(i j)^"(dir)" (A,B)ln (P_(i j)^"(dir)" (A,B) )/ (f_i (A) f_j (B))
 $
 The top-scoring pairs are predicted to be structural contacts.
 
@@ -258,7 +258,7 @@ While mfDCA represented a breakthrough in usability of DCA, the simplifying appr
 The pseudolikelihood maximization DCA (plmDCA) algorithm replaces the intractable full-likelihood fit of the Potts model (which earlier methods approximated) with a tractable product of conditional likelihoods. Concretely, the inverse Potts problem on an alignment of length $L$ becomes $L$ coupled multinomial logistic regressions rather than a single optimization over the global partition function.
 
 === Method
-We retain the Potts parametrization of fields and couplings introduced in @potts. To mitigate redundacy, sequences are reweighted using an identity threshold $x in [0.8, 0.9]$: for sequence $m$, let
+We retain the Potts parametrization of fields and couplings introduced in @potts. To mitigate redundacy, sequences are reweighted using an empirically found identity threshold $x = 0.9$. For sequence $m$, let
 $
   w_m = 1 / m_m, quad "with" m_m = |{a: "sim"(sigma^((a)),sigma^((b)))>=x}|,
 $
@@ -280,45 +280,66 @@ $
 $
 To curtail overfitting, we add convex $l_2$ penalties,
 $
-  R_(cal(l)_2) = lambda_h sum_(r=1)^N ||h_r||_2^2 + lambda_J sum_(1 <=i < j <=N) ||J_(i j)||_2^2
+  R_(cal(l)_2) = lambda_h sum_(r=1)^L lr(norm(h_r)_2^2) + lambda_J sum_(1 <=i < j <=L) norm(J_(i j))_2^2
 $
 and minimize
 $
   {h^"PLM", J^"PLM"} = arg min_(h, J) {cal(l)_"pseudo" (h, J) + R_(cal(l)_2) (h, J)}
 $
-The $cal(l)_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters. For scoring with the Frobenius norm, we convert couplings to the zero-sum gauge,
-$
-  J'_(i j) (k, l) = J_(i j) (k, l) - J_(i j) (dot, l) - J_(i j) (k, dot) + J_(i j) (dot, dot),
-$
-where "$dot$" denotes an average over the alphabet.
+The $cal(l)_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters.
 
-Each $g_r$ is precisely the loss of a multinomial logistic regression (softmax): classes are the $q$ states of $sigma_r$; features are one-hot encodings of ${sigma_i}_(i!=r)$ with $(L-1)(q-1)$ degrees of freedom after dropping a reference state. Hence plmDCA is implemented as $L$ independent, weighted softmax problems with $cal(L)_2$ penalty (e.g. solved with L-BFGS or mini-batch SGD). Two variants are used in practice: asymmetric PLM, which fits each independently and then symmetrizes averaging:
+Each $g_r$ is precisely the loss of a multinomial logistic regression (softmax): classes are the $q$ states of $sigma_r$; features are one-hot encodings of ${sigma_i}_(i!=r)$ with $(L-1)(q-1)$ degrees of freedom after dropping a reference state. Hence (asymmetric) plmDCA is implemented as $L$ independent, weighted softmax problems with $cal(L)_2$ penalty (e.g. solved with L-BFGS or mini-batch SGD). Two variants are used in practice: asymmetric PLM, which fits each independently and then symmetrizes averaging:
 $
   hat(J)_(i j) <- 1/2(J_(i j)^((i))+J_(i j)^((j)))
 $
-and symmetric (joint) PLM, which minimizes $cal(L)_"pseudo"$ over all parameters at once.
+and symmetric (joint) PLM, which minimizes $cal(L)_"pseudo"$ over all parameters at once. Results are typically similar, but optimization in the symmetric variant can be heavier.
 
-For pair scoring, plmDCA avoids $"DI"$ as it would introduce a third regularization for the pseudocounts. Instead it,
-(i) converts to zero-sum gauge $J'_(i j)$; (ii) computes the Frobenius norm 
+*Pair Scoring* \
+For pair scoring, plmDCA avoids the previously defined Direct Information (DI) as it would introduce a another regularization parameter for the pseudocounts, on top of $lambda_h "and" lambda_J$. Instead it considers the Frobenius Norm (FN)
 $
-  S_(i j)^"FN" = (sum_(k,l=1)^q (J'_(i j)(k,l))^2)^(1/2);
+  norm(J_(i j))_2 = sqrt(sum_(k,l=1)^q J_(i j)(k,l)^2).
 $
-(iii) applies Average Product Correction (APC) to reduce background/phylogenetic effects,
+Unlike the DI score, the FN is not independent of gauge choice so a direct decision must be made. As noted in @weigt2009, the zero-sum gauge minimizes the FN, making it the most appropriate gauge choice available. The procedure is hence 
+(i) convert to zero-sum gauge $J'_(i j)$: 
 $
-  S_(i j)^"CN" = S_(i j)^"FN" - (S_(i dot)^"FN" S_(dot j)^"FN") / S_(dot dot)^"FN",
+  J'_(i j) (k, l) = J_(i j) (k, l) - J_(i j) (dot, l) - J_(i j) (k, dot) + J_(i j) (dot, dot),
+$ <jprime>
+where "$dot$" denotes a simple average over the $q$ states at that position; (ii) compute the Frobenius norm 
 $
-where $S_(i dot)^"FN"$ and $S_(dot j)^"FN"$ are row/column means and $S_(dot dot)^"FN"$ is the grand mean. 
-Residue pairs $(i, j)$ are ranked by $S_(i j)^"CN"$ to predict structural contacts. 
+  cal(S)_(i j)^"FN" = norm(J'_(i j))_2 = sqrt(sum_(k,l=1)^q (J'_(i j)(k,l))^2);
+$
+(iii) apply Average Product Correction (APC) adjusted from its use in @jones2012psicov to reduce phylogenetic bias,
+$
+  cal(S)_(i j)^"CN" = cal(S)_(i j)^"FN" - (cal(S)_(i dot)^"FN" cal(S)_(dot j)^"FN") / cal(S)_(dot dot)^"FN",
+$
+where $cal(S)_(i dot)^"FN"$ and $cal(S)_(dot j)^"FN"$ are row/column means and $cal(S)_(dot dot)^"FN"$ is the grand mean. 
+Residue pairs $(i, j)$ are ranked by $cal(S)_(i j)^"CN"$ to predict structural contacts. 
 === Limitations
 Despite its practical impact, plmDCA remains sensitive to sampling: accurate contact recovery still requires large $M_"eff"$, and sparse or biased MSAs degrade estimates. Phylogenetic and positional bias persist (reweighting and APC help but do not eliminate them), which can inflate false positives.
 
 
 === Fast plmDCA (2014)
-To make plmDCA deployable at scale, two of the original authors and a third collaborator, revisited the optimization and engineering choices of the paper. In this second version, the joint problem is decomposed into $L$ independent, weighted softmax regressions, one for each site, and the final couplings are made symmetric by averaging 
+To make plmDCA deployable at scale, two of the original authors and a third collaborator revisited the optimization choices of the method @fastplmDCA. In this second version, the asymmetric variant is used: $L$ independent, weighted softmax regressions are computed, one per site, and the final couplings are symmetrized by averaging, 
 $
   J_(i j) = 1/2 (J_(i j)^((i))+J_(i j)^((j))).
 $
-This reduces per-solve dimensionality and, crucially, enables trivial parallelization across CPU cores or nodes, which is the primary source of time reduction. Furthermore, regularization remains $cal(l)_2$ and the APC-corrected Frobenius norm still provides a simple and robust ranking criterion. The result is comparable contact accuracy at a fraction of the runtime, making large families and long sequences tractable in practice.
+This decomposition reduces per-solve dimensionality and, crucially, enables trivial parallelization across CPU cores or nodes, which is the primary source of the runtime gain.
+
+Because each $J_(i j)$ is regularized twice (once in the regression for $i$ and once for $j$), the coupling penalty parameter must be halved relative to the symmetric formulation. Typical values are $lambda_h = 0.01$ and $lambda_J' = 0.005$. Before averaging, the two independently inferred coupling blocks are each shifted into the zero-sum gauge to ensure consistency,
+$
+  hat(J)_(i j)(k,l)= J_(i j) (k,l) - J_(i j)(:,l)- J_(i j) (k,:) + J_(i j) (:,:).
+$
+For scoring, the method adopts the Corrected Frobenius Norm (CFN): first compute the Frobenius norm of $hat(J)_(i j)$ excluding the gap state,
+$
+  "FN"_(i j) = sqrt(sum_(k,l != "gap") hat(J)_(i j) (k, l)^2),
+$
+
+then apply the Average Product Correction
+$
+  cal(S)^"CFN"_(i j) = "FN"_(i j) - ("FN"_(i :) "FN"_(: j)) / "FN"_(: :)
+$
+
+The combination of asymmetric regression and symmetrization, regularization scaling, gauge alignment, and CFN scoring yields essentially the same contact accuracy as the original plmDCA, but at a fraction of the runtime, making large protein families and long sequences tractable in practice.
 
 == Boltzmann Machine DCA (2021)
 In mfDCA accuracy was traded for speed via the small-coupling inversion; in plmDCA, a product of sitewise conditionals was optimized, avoiding the global partition function. adabmDCA instead proposes a solution closer to the statistical ideal: fitting the full Potts model by maximizing the true likelihood, using Monte Carlo Markov Chains to estimate intractable expectations and an adaptive procedure to keep sampling reliable and efficient. The result is a generative model that (by construction) matches the empirical one- and two-site statistics of the reweighted MSA.
