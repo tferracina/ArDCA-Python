@@ -191,7 +191,7 @@ $
 $ <potts>
 where $h_i$ are site-specific fields and $J_(i j)$ are coupling parameters between residue pairs. The central goal of DCA is to infer the interaction parameters $J_(i j)$ that best explain the observed single- and pairwise frequencies.
 
-In practice, direct inference of these parameters is computationally challenging. Evaluating the partition function $Z$ is intractable for realistic proteins, as it requires summing over $q^L$ possible sequences. Thus, distinct implementations of DCA introduce approximations to bypass this computation. The original message passing implementation @weigt2009, directly attempted to solve for couplings through a slowly converging iterative scheme, making it inapplicable in practice. In this paper, we will explore some important algorithmnic innovations in DCA following its conception.
+In practice, direct inference of these parameters is computationally challenging. Evaluating the partition function $Z$ is intractable for realistic proteins, as it requires summing over $q^L$ possible sequences. Thus, distinct implementations of DCA introduce approximations to bypass this computation. The original message passing implementation @weigt2009, directly attempted to solve for couplings through a slowly converging iterative scheme, making it inapplicable in practice. In this paper, we will explore some important algorithmic innovations in DCA following its conception.
 
 = Evolution of DCA Methods
 
@@ -295,7 +295,7 @@ $
 and symmetric (joint) PLM, which minimizes $cal(L)_"pseudo"$ over all parameters at once. Results are typically similar, but optimization in the symmetric variant can be heavier.
 
 *Pair Scoring* \
-For pair scoring, plmDCA avoids the previously defined Direct Information (DI) as it would introduce a another regularization parameter for the pseudocounts, on top of $lambda_h "and" lambda_J$. Instead it considers the Frobenius Norm (FN)
+For pair scoring, plmDCA avoids the previously defined Direct Information (DI) as it would introduce a regularization parameter for the pseudocounts, on top of the existing $lambda_h "and" lambda_J$. Instead it considers the Frobenius Norm (FN)
 $
   norm(J_(i j))_2 = sqrt(sum_(k,l=1)^q J_(i j)(k,l)^2).
 $
@@ -341,10 +341,27 @@ $
 
 The combination of asymmetric regression and symmetrization, regularization scaling, gauge alignment, and CFN scoring yields essentially the same contact accuracy as the original plmDCA, but at a fraction of the runtime, making large protein families and long sequences tractable in practice.
 
-== Boltzmann Machine DCA (2021)
-In mfDCA accuracy was traded for speed via the small-coupling inversion; in plmDCA, a product of sitewise conditionals was optimized, avoiding the global partition function. adabmDCA instead proposes a solution closer to the statistical ideal: fitting the full Potts model by maximizing the true likelihood, using Monte Carlo Markov Chains to estimate intractable expectations and an adaptive procedure to keep sampling reliable and efficient. The result is a generative model that (by construction) matches the empirical one- and two-site statistics of the reweighted MSA.
+== Boltzmann Machine DCA (2018)
+In mfDCA accuracy was traded for speed via the small-coupling inversion; in plmDCA, a product of sitewise conditionals was optimized, avoiding the global partition function. bmDCA@bmDCA instead proposes a solution closer to the statistical ideal: fitting the full Potts model by maximizing the true likelihood, using Monte Carlo Markov Chains to estimate intractable expectations. Improving on this, adabmDCA@adabmDCA introduces an adaptive procedure to keep sampling reliable and efficient. The result is a generative model that (by construction) matches the empirical one- and two-site statistics of the reweighted MSA.
 
 === Method
+bmDCA aims to infer the full Potts model defined as @potts that reproduces the single- and pair-wise frequencies of the MSA. \ 
+The training procedure follows the classical Boltzmann machine learning algorithm:
++ Sampling step. For current parameters {J, h}, estimate model frequencies $p_i, p_(i j)$ by MCMC
++ Update step. Adjust parameters when the estimated frequencies deviate from empirical ones: $Delta h_i prop f_i - p_i , quad  Delta J_(i j) prop f_(i j) - p_(i j)$
++ Iterate until empirical and model moments match within tolerance.
+
+Regularization is imposed to stabilize the fit and avoid overfitting.
+
+=== Limitations
+- Computational cost: Direct Boltzmann machine learning with MCMC is extremely slow for realistic protein lengths ($10^7-10^9$ parameters).
+- Sampling difficulty: Accurate moment estimation requires long chains and careful equilibration, making the approach impractical without approximations.
+- Scaling: While bmDCA is theoretically optimal (full likelihood optimization), it is limited in practice to small systems where large-scale computation is feasible.
+
+=== adabmDCA (2021)
+adabmDCA revisits the same goal of fitting the full Potts by likelihood maximization, but introduces an adaptive MCMC procedure to make the approach more practical. Instead of relying on fixed sampling parameters, it dynamically tunes equilibration, waiting times, and chain persistance. adabmDCA pushes the bmDCA approach closer to practical usability, at the cost of a more complex implementation and still significant compute requirements. 
+
+*Method* \
 Let the MSA have length L, and M sequences $bold(sigma) = (sigma_1, ..., sigma_L)$. The maximum-entropy distribution that reproduces chosen moments is the Potts model defined in @potts.
 
 To reduce phylogenetic redundancy, assign each sequence a weight
@@ -425,18 +442,52 @@ In short, pruning and decimation prevent overfitting by removing parameters that
 
 
 == Autoregressive Network DCA
-
-ArDCA was built to explore the ability of generative models for protein design coming from sequence-data. ArDCA emerges as a capable model for the extraction of structural and functional protein information which encoded in rapidly growing protein databases.
+ArDCA was built to explore the ability of generative models for protein design coming from sequence-data. It was not the first generative model, DeepSequence, ... ArDCA emerges as a capable model for the extraction of structural and functional protein information which encoded in rapidly growing protein databases.
 
 === Method
-In arDCA, the exponential-family MaxEnt distribution is replaced with a conditional probability model, where each residue is predicted from the previous ones. This arises from the chain rule decomposition of the join probability distributions:
+In arDCA, the exponential-family MaxEnt distribution is replaced with a conditional probability model, where each residue is predicted from the previous ones. This arises from the chain rule decomposition of the joint probability distributions:
 $
-  P(bold(S)) = product_(i=1)^L P(s_i|s_1,...,s_(i-1))
+  P(bold(sigma)) = product_(i=1)^L P(sigma_i|sigma_1,...,sigma_(i-1))
 $
+*Parameter inference* \
+The inference of the parameters is done through likelihood maximization. Following a Bayesian setting with a uniform prior, the optimal parameters are those that maximize the probability of the data:
+$
+  {J^*, h^*} &= arg max_{J, h} P(cal(M)|{J, h}) \
+  &= arg max_{J, h} log P(cal(M)|{J, h}) \
+  &= arg max_{J, h} sum_(m=1)^M log product_(i=1)^L P(a_i^m|a_(i-1)^m,...,a_1^m) \
+  &= arg max_{J, h} sum_(m=1)^M sum_(i=1)^L log P(a_i^m|a_(i-1)^m,...,a_1^m)
+$ <lhmax>
+Each $h_i(a)$ and $J_(i j)(a,b)$ is present in only one conditional probability $P(a_i|a_(i-1),...,a_1)$, thus we can maximize each conditional probability indepdently in @lhmax:
+$
+  {J_(i j)^*, h_i^*} = arg max_{J_(i j), h_i} sum_(m=1)^M [h_i (a_i^m) + sum_(j=1)^(i-1) J_(i j) (a_i^m, a_j^m) - log z_i (a_(i-1)^m, ..., a_1^m)]
+$
+where
+$
+  z_i (a_(i-1), .., a_1) = sum_(a_i) exp(h_i (a_i)+sum_(j=1)^(i-1) J_(i j)(a_i, a_j))
+$ <cpnorm>
+is the normalization factor of the conditional probability of $a_i$. \
+Taking the derivative with respect to $h_i(a)$ or $J_(i j) (a,b)$, with $j=1, ..., i-1$, we get:
+$
+  0 &= 1/M sum_(m=1)^M [ delta(a, a_i^m) - (partial log z_i (a_(i-1)^m, .., a_1^m)) / (partial h_i (a))] \ 
+  0 &= 1/M sum_(m=1)^M [ delta(a, a_i^m) delta(b, a_j^m) - (partial log z_i (a_(i-1)^m, .., a_1^m)) / (partial J_(i j) (a,b))].
+$
+Using @cpnorm, we find
+$
+  (partial log z_i (a_(i-1)^m, .., a_1^m)) / (partial h_i (a)) &= P(a_i = a |a_(i-1)^m,...,a_1^m) \ 
+  (partial log z_i (a_(i-1)^m, .., a_1^m)) / (partial J_(i j) (a,b)) &= P(a_i = a |a_(i-1)^m,...,a_1^m) delta(a_j^m, b).
+$
+The set of equations reduces to a simple form:
+$
+  f_i (a) &= angle.l P(a_i = a |a_(i-1)^m,...,a_1^m) angle.r_cal(M), \
+  f_(i j) (a, b) &= angle.l P(a_i = a |a_(i-1)^m,...,a_1^m) delta(a_j^m, b) angle.r_cal(M),
+$
+where $angle.l dot angle.r_cal(M) = 1/M sum_(m=1)^M dot^m$ denotes the empirical average. The first variable, $i=1$, is unconditioned, therefore the coupling equation is $J equiv 0$
+and the equation for the field is the profile model also used in bmDCA, $h_1(a) = log f_1(a) + "const"$.
 
-The parameters are learned by predicting each residue given the previous ones, a similar approach to that taken in NLP methods.
-
-This method has the advantage of being tractable, able to generate new sequences from the given learned parameters, and be scalable.
+*Implementation details* \ 
+Unlike bmDCA, the equations do not enforce exact matching between model marginals and empirical frequencies. The ability to reproduce the frequencies is thus a good proxy for the generative properties of the model, on top of the fitting quality of current parameters. \ 
+In practice, the parameters are updated using gradient descent on the likelihood. As we are able to take the expectations directly over the MSA, not needed MCMC, the gradients are exact. A commonly used optimizer for this task is the quasi-Newton optimizer (low-storage BFGS). \
+For regularization, arDCA makes use of $ell_2$ penalties, with different strengths depending on whether the task is generating sequences or just contact prediction. It was noted that small regularization values improved the generative quality while larger were beneficial for contact prediction. Similarly to the previous methods, sequence reweighting was also used in this algorithm.
 
 === Key Contributions
 
