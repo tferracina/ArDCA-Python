@@ -5,7 +5,12 @@ uv.lock
 .DS_Store
 
 arDCA-py/__pycache__
+arDCA-py/venv
+
+code/__pycache__
 
 julia
 
 notes.typ
+
+code/testing.ipynb
