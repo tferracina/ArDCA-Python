@@ -107,6 +107,38 @@ def compute_weights(X_idx: np.ndarray,
     W = 1.0 / similar_counts
     M_eff = float(W.sum())
     return W, M_eff
-    
 
+
+def compute_empirical_f1(X_idx: np.ndarray, W: np.ndarray, q: int):
+    """
+    Compute empirical single-site frequency counts weighted by W
+    Returns: (L, q) matrix
+    """
+    _, L = X_idx.shape
+
+    f1 = np.zeros((L, q))
+
+    for i in range(L):
+        np.add.at(f1[i, :], X_idx[:, i], W)
+
+    return f1
+
+
+def compute_empirical_f2(X_idx: np.ndarray, W: np.ndarray, q: int):
+    """
+    Compute empirical pairwise frequency counts weighted by W
+    Returns: (L, L, q, q) matrix
+    """
+    _, L = X_idx.shape
+    f2 = np.zeros((L, L, q, q))
+
+    for i in range(L):
+        for j in range(i, L):
+            idx_pairs = X_idx[:, i] * q + X_idx[:, j]
+            counts = np.bincount(idx_pairs, weights=W, minlength=q*q).reshape(q, q)
+            f2[i, j] = counts
+            if j != i:
+                f2[j, i] = counts.T
+
+    return f2
 
