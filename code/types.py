@@ -1,32 +1,40 @@
 import torch
 import numpy as np
 from dataclasses import dataclass
-
-#alphabet
-
-#MSA
+from typing import List, Dict
 
 @dataclass
-class ReweightingConfig:
-    seqid_threshold: float
-    count_gaps_as_match: bool
+class Alphabet:
+    tokens: List[str]
+    to_idx: Dict[str, int]
+    q: int
 
-#ArConfig
 @dataclass
-class ArConfig:
+class MSAData:
+    seqs: np.ndarray         # [M, L]
+    weights: np.ndarray      # [M,], reweighting coeffs w_m
+    M_eff: float             # sum(weights)
     L: int
-    init_h: str #"zeros" / "emp_logfreq"
-    init_J_scale: float
-    device: str
+    q: int
+    identity_tresh: float
 
 @dataclass
-class RegularizationConfig:
-    lambda_h: float 
+class ModelParams:
+    lambda_h: float
     lambda_J: float
-    mask_J_in_reg: bool
+    optimizer: str 
+    max_iters: int 
+    seed: int 
 
-@dataclass
-class OptimConfig:
-    name: str
-    lr: float
-    
+@dataclass 
+class TrainState:
+    theta: np.ndarray     # flattened param vector
+    value: float          # current objective
+    grad_norm: float
+    iters: int
+
+@dataclass 
+class Metrics: 
+    nll: float      # avg reweighted neg log-lh
+    reg: float      # L2 penalty value
+    total: float    # nll+reg
