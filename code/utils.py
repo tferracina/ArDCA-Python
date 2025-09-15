@@ -4,60 +4,55 @@ import numpy as np
 from Bio import AlignIO
 from typing import Tuple, Union
 import gzip
+from sklearn.decomposition import PCA
+from torch.utils.data import DataLoader, TensorDataset
 
 
+# -- loading and processing data --
 q = 21
 
+ALPHABET = "-ACDEFGHIKLMNPQRSTVWY"
+AA2IDX = {aa:i for i, aa in enumerate(ALPHABET)}
 
 def aa2idx(aa: str) -> int:
-    """Return numer corresponding to amino acid, return 0 for gaps"""
-    aa2num_dict = {
-        'A': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5,
-        'G': 6, 'H': 7, 'I': 8, 'K': 9, 'L': 10,
-        'M': 11, 'N': 12, 'P': 13, 'Q': 14, 'R': 15,
-        'S': 16, 'T': 17, 'V': 18, 'W': 19, 'Y': 20,
-    }
-    return aa2num_dict.get(aa, 0)
+    return AA2IDX.get(aa.upper(), 0)
 
 
-def read_fasta_alignment(filename: str, max_gap_fraction: float) -> np.ndarray:
-    """Parses a FASTA file containing a MSA, and returns a matrix of intergers 
-
-    If a seq contains a fraction of gaps that exceeds `max_gap_fraction`, it is discarded. 
-    Set this value to 1 to keep all sequences.
-    
-    Handles both plain FASTA files and gzipped FASTA files (.gz extension).
+def read_fasta_alignment(filename: str, max_gap_fraction: float,  max_col_gap_fraction=None) -> np.ndarray:
+    """Parses an MSA in FASTA file -> returns matrix of intergers 
+    discard if seq contains a fraction of gaps >  `max_gap_fraction` - set 1 to keep all
+    discard if column contains a fraction of gaps > `max_col_gap_fraction` - if set
     """
-    
-    # Check if file is gzipped and open accordingly
     if filename.endswith('.gz'):
         with gzip.open(filename, 'rt') as handle:
             alignment = AlignIO.read(handle, "fasta")
     else:
         alignment = AlignIO.read(filename, "fasta")
 
-    # Filter sequences based on gap fraction
-    filtered_seqs = []
-    for record in alignment:
-        seq_str = str(record.seq).upper()
-        gap_count = seq_str.count('-')
-        if gap_count / len(seq_str) <= max_gap_fraction:
-            filtered_seqs.append(record)
-
-    if not filtered_seqs:
-        raise ValueError("No sequences passed gap filter (max_gap_fraction)={max_gap_fraction})")
-    # Create numerical matrix
-    M = len(filtered_seqs)
     L = alignment.get_alignment_length()
-    matrix = np.zeros((M, L), dtype = np.int8)
 
-    # Fill matrix
-    for seq_i, record in enumerate(filtered_seqs):
-        seq_str = str(record.seq).upper()
-        for pos_j, char in enumerate(seq_str):
-            matrix[seq_i, pos_j] = aa2idx(char)
+    # Filter sequences based on gap fraction
+    keep = []
+    for rec in alignment:
+        s = str(rec.seq).upper()
+        if s.count('-') / L <= max_gap_fraction:
+            keep.append(s)
+    if not keep:
+        raise ValueError("No sequences passed gap filter (max_gap_fraction)={max_gap_fraction})")
+    
+    # Create numerical matrix
+    M = len(keep)
+    idx_matrix = np.zeros((M, L), dtype = np.int16)
 
-    return matrix
+    for i, s in enumerate(keep):
+        idx_matrix[i] = [aa2idx(c) for c in s]
+
+    if max_col_gap_fraction is not None:
+        col_gap_frac = (idx_matrix == 0).mean(axis=0)
+        col_mask = col_gap_frac <= max_col_gap_fraction
+        idx_matrix = idx_matrix[:, col_mask]
+
+    return idx_matrix
 
 
 def encode_sequence(X_idx: np.ndarray) -> torch.Tensor:
@@ -65,7 +60,7 @@ def encode_sequence(X_idx: np.ndarray) -> torch.Tensor:
     A = torch.tensor(X_idx)
     X_one_hot = F.one_hot(A.long(), num_classes=21)
 
-    return X_one_hot
+    return X_one_hot.float()
 
 
 def compute_weights(X_idx: np.ndarray, 
@@ -85,7 +80,7 @@ def compute_weights(X_idx: np.ndarray,
     
     eq = (X_idx[:, None, :] == X_idx[None, :, :]) # [M, M, L]
 
-    # remove (or keep) gap-gap comparisons
+    # gap-gap comparisons
     if gap_idx is None:
         valid = np.ones_like(eq, dtype=bool)
     else:
@@ -96,14 +91,14 @@ def compute_weights(X_idx: np.ndarray,
             valid = valid | gapgap
             eq = np.where(gapgap, True, eq)
 
-    matches = (eq & valid).sum(axis=-1) # check equality
-    denom = valid.sum(axis=-1) # check number of valid positions 
+    matches = (eq & valid).sum(axis=-1) # equality
+    denom = valid.sum(axis=-1) # number of valid positions 
     with np.errstate(divide='ignore', invalid='ignore'):
-        ident = matches / denom # check sequence identity
+        ident = matches / denom # check seqid
         ident[denom == 0] = 0.0  # fallback for overlapping nongap sites
 
-    np.fill_diagonal(ident, 1.0)                  # include self
-    similar_counts = (ident >= theta).sum(axis=1) # n_m
+    np.fill_diagonal(ident, 1.0)                
+    similar_counts = (ident >= theta).sum(axis=1) 
     W = 1.0 / similar_counts
     M_eff = float(W.sum())
     return W, M_eff
@@ -115,12 +110,9 @@ def compute_empirical_f1(X_idx: np.ndarray, W: np.ndarray, q: int):
     Returns: (L, q) matrix
     """
     _, L = X_idx.shape
-
-    f1 = np.zeros((L, q))
-
+    f1 = np.zeros((L, q), dtype=float)
     for i in range(L):
-        np.add.at(f1[i, :], X_idx[:, i], W)
-
+        f1[i] = np.bincount(X_idx[:, i], weights=W, minlength=q)
     return f1
 
 
@@ -130,11 +122,13 @@ def compute_empirical_f2(X_idx: np.ndarray, W: np.ndarray, q: int):
     Returns: (L, L, q, q) matrix
     """
     _, L = X_idx.shape
-    f2 = np.zeros((L, L, q, q))
+    f2 = np.zeros((L, L, q, q), dtype=float)
 
     for i in range(L):
+        ai = X_idx[:, i]
         for j in range(i, L):
-            idx_pairs = X_idx[:, i] * q + X_idx[:, j]
+            aj = X_idx[:, j]
+            idx_pairs = ai * q + aj
             counts = np.bincount(idx_pairs, weights=W, minlength=q*q).reshape(q, q)
             f2[i, j] = counts
             if j != i:
@@ -142,3 +136,39 @@ def compute_empirical_f2(X_idx: np.ndarray, W: np.ndarray, q: int):
 
     return f2
 
+
+# -- model training utilities --
+def split_sequences(X: np.ndarray, W: np.ndarray, val_frac: float = 0.2, seed: int = 0):
+    """
+    Random split of sequences + weights into train/val.
+    Returns (X_train, W_train, X_val, W_val)
+    """
+    rng = np.random.default_rng(seed)
+    M = X.shape[0]
+    idx = rng.permutation(M)
+    m_val = max(1, int(round(val_frac * M)))
+    val_idx, train_idx = idx[:m_val], idx[m_val:]
+    return X[train_idx], W[train_idx], X[val_idx], W[val_idx]
+
+
+def create_data_loader(seqs: torch.Tensor, weights: torch.Tensor, 
+                      batch_size: int, shuffle: bool = True) -> DataLoader:
+    """Create DataLoader for training."""
+    dataset = TensorDataset(seqs, weights)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+
+# -- analyzing results --
+def one_hot_for_pca(idx_mat: np.ndarray, q: int = 21) -> np.ndarray:
+    M, L = idx_mat.shape
+    onehot = np.eye(q, dtype=np.float32)[idx_mat]      # (M, L, q)
+    X = onehot.reshape(M, L * q)                       # (M, L*q)
+    return X
+
+
+def pca_from_onehot(idx_mat: np.ndarray, n_components=2):
+    X = one_hot_for_pca(idx_mat)            # (M, L*q)
+    X -= X.mean(axis=0, keepdims=True)
+    pca = PCA(n_components=n_components, svd_solver="auto")
+    Z = pca.fit_transform(X)                   # (M, n_components)
+    return Z, pca

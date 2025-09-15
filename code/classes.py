@@ -24,7 +24,8 @@ class ModelParams:
     lambda_J: float
     optimizer: str 
     max_iters: int 
-    seed: int 
+    seed: int
+    val_frac: float
 
 @dataclass 
 class TrainState:
