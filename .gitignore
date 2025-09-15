@@ -1,16 +1,9 @@
-test.fa
-.venv
-uv.lock
-
+.vscode/
 .DS_Store
 
-arDCA-py/__pycache__
-arDCA-py/venv
-
 code/__pycache__
+code/.arvenv
 
 data
 
 notes.typ
-
-code/testing.ipynb
