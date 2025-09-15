@@ -493,20 +493,26 @@ For regularization, arDCA makes use of $ell_2$ penalties, with different strengt
 
 This lightweight approach performs at a similar accuracy of previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @weigt2020. It presents an important innovation also due to its mathematical advantages, which will be explored further, leading to improved applicability in sequence generation and evaluation.
 
-== Attention DCA - (MAYBE)
-- Attention-Potts Model: factored self-attention -> potts model
-
 = Implementation and Extension
+The original ArDCA model was developed in Julia, a language designed for high-performance numerical and scientific computing. Julia's strengths lie in just-in-time (JIT) compilation, seamless handling of linear algebra, and built-in support for parallelism, making it well-suited for implementing large-scale statistical models.
+
+In contrast, the re-implementation was carried out in Python, a widely adopted language for machine learning and data science. While Python itself is generally slower due to its interpreted nature, performance-critical operations are offloaded to highly optimized libraries (e.g., NumPy, SciPy, PyTorch), which use underlying C/C++ or Fortran code. This ecosystem makes Python particularly attractive for model development, as it provides a wide range of frameworks, pre-built optimization routines, and strong community support.
+
+*Important Differences Between Julia and Python*
+
+There are some features of the languages that makes the porting not a simple one-to-one translation. To begin, Julia uses column-major order, which akes column-wise operations very fast and easily cached. This is in complete contrast to Python which is strucutred with row-major order where row-wise operations are more optimized. The impact of this difference is that loops and reshaping operations need to be reconsidered for memory efficiency. In addition, Julia is 1-indexed whereas Python is 0-indexed. This has no effect on the performance, but it changes the bounds on loops, the indexing of objects, and the range functions.
+
+Furthermore, loops have different behaviors in the languages. Julia loops are compiled down to efficient machine code with JIT. There exist a macro that removes the bounds checking, making loops fast without the need for vectorization. On the other hand, pure Python loops are slow. To reach the same level of efficiency vectorization is needed in Python, implemented via NumPy or broadcasting.
+
+The final important difference is in compilation versus interpretation. Julia JIT compiles functions to machine code, which has an initial compilation cost, but allows future calls to run much faster. On the other hand, Python is interpreted, thus heavy computations require external libraries which are precompiled in other, more efficient, languages.
 
 == Implementation details
-- Julia -> Python re-implementation (vectorization, frameworks, missing functions)
+For our implementation, we made use of PyTorch's ecosystem. The autoregressive network was created through a $mono("nn.Module")$
+
+
 == Computational challenges
 
 - Benchmarks
-
-== (MAYBE) Improvements:
-- Allowing arbitrary sequence length (GPT-style transformers)
-- Incorporating attention mechanism (Potts with attention)
 
 Evaluation with Boltz-2 / AlphaFold3
 
