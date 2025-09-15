@@ -28,22 +28,29 @@ class ArDCA(nn.Module):
         """zero out disallowed J entries for safety."""
         self.J.data *= self.J_mask
 
-    def compute_ar_logits(self, X_idx: torch.Tensor):
+    def compute_ar_logits(self, X_oh: torch.Tensor):
         """
-        z[m,i,a] = h[i,a] + sum_j<i sum_b J[i,j,a,b] * X[m,j,b]
-        X_idx: (M, L)          integer states
-        returns: (M, L, q)     z[m,i,a]
+        z[m,i,a] = h[i,a] + sum_{j<i} sum_b J[i,j,a,b] * X[m,j,b]
+        X_idx: (M, L)
+        returns: (M, L, q)
         """
-        M, L = X_idx.shape
-        q = self.q
+        X_oh = X_oh.to(self.J.dtype)
+        M, L, q = X_oh.shape
+        logits = self.h_pos.unsqueeze(0).expand(M, -1, -1).clone()  # (M,L,q)
 
-        X_oh = F.one_hot(X_idx, num_classes=q).to(self.J.dtype)          # (M, L, q)
+        # Block-sparse: collect lower-triangular indices
+        i_idx, j_idx = torch.tril_indices(L, L, offset=-1)
+        J_blocks = self.J[i_idx, j_idx]   # (n_pairs, q, q)
+        X_blocks = X_oh[:, j_idx]         # (M, n_pairs, q)
 
-        pair = torch.einsum('ijab,mjb->mia', self.J * self.J_mask, X_oh)        # (M, L, q)
-        h = self.h_pos
-        return h.unsqueeze(0) + pair
+        contrib = torch.einsum("mpq,pqr->mpr", X_blocks, J_blocks)  # (M,n_pairs,q)
+        logits = logits.index_add(1, i_idx, contrib)
+
+        return logits
+
+
     
-    def loss(self, X_idx: torch.Tensor, W: torch.Tensor, lambda_J: Optional[float] = None,
+    def loss(self, X_oh: torch.Tensor, X_idx: torch.Tensor, W: torch.Tensor, lambda_J: Optional[float] = None,
               lambda_h: Optional[float] = None) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Compute weighted negative log-likelihood loss with reg
@@ -56,7 +63,7 @@ class ArDCA(nn.Module):
             lambda_h = self.lambda_h
 
         # 1. Logits -> log-probs
-        logits = self.compute_ar_logits(X_idx)        # (M,L,q)
+        logits = self.compute_ar_logits(X_oh)        # (M,L,q)
         logp = F.log_softmax(logits, dim=-1)          # (M,L,q)
 
         # 2. Gather log-probabilities of true aa
@@ -113,11 +120,11 @@ class ArDCA(nn.Module):
         return 1.0 / (W ** 2).sum()
     
     @torch.no_grad()
-    def evaluate(self, X_idx: torch.Tensor, W: torch.Tensor) -> Dict[str, float]:
+    def evaluate(self, X_oh: torch.Tensor, X_idx: torch.Tensor, W: torch.Tensor) -> Dict[str, float]:
         """Evaluate model performance on data."""
         self.eval()
         
-        logits = self.compute_ar_logits(X_idx)
+        logits = self.compute_ar_logits(X_oh)
         logp = F.log_softmax(logits, dim=-1)
         
         M, L = X_idx.shape
@@ -138,16 +145,33 @@ class ArDCA(nn.Module):
         
         return metrics
     
-    # @torch.no_grad()
-    # def sample(self, n: int = 1, device: str | None = None, rng: torch.Generator | None = None):
-    #     """Autoregressively sample n sequences"""
-    #     self.eval()
-    #     device = device or self.h.device
-    #     seqs = torch.zeros((n, self.L), dtype=torch.long, device=device)
-    #     for i in range(self.L):
-    #         probs = self.conditional(i, seqs[:, :i])
-    #         seqs[:, i] = torch.multinomial(probs, num_samples=1, generator=rng).squeeze(1)
-    #     return seqs
+    @torch.no_grad()
+    def sample(self, n_samples: int = 1, device: str = "cpu") -> np.ndarray:
+        """
+        Generate new sequences from the trained arDCA model.
+        Returns: (n_samples, L) numpy array of sampled sequence indices.
+        """
+        self.eval()
+        L, q = self.L, self.q
+        samples = torch.zeros((n_samples, L), dtype=torch.long, device=device)
+        X_oh = torch.zeros((n_samples, L, q), dtype=self.J.dtype, device=device)
+
+        for i in range(L):
+            logits = self.h_pos[i].clone()
+            if i > 0:
+                # Add coupling contributions from previous positions
+                for j in range(i):
+                    prev_a = samples[:, j]
+                    J_ij = self.J[i, j]  # shape: (q, q)
+                    # Gather the relevant couplings for each sample
+                    contrib = J_ij[:, prev_a].T  # shape: (n_samples, q)
+                    logits = logits + contrib
+            probs = torch.softmax(logits, dim=-1)  # shape: (n_samples, q)
+            a_i = torch.multinomial(probs, num_samples=1).squeeze(-1)
+            samples[:, i] = a_i
+            X_oh[torch.arange(n_samples), i, a_i] = 1.0
+
+        return samples.cpu().numpy()
 
 
 def train_ardca(model: ArDCA, 
@@ -161,7 +185,7 @@ def train_ardca(model: ArDCA,
     """
     train_seqs, val_seqs = None, None
     train_weights, val_weights = None, None
-    
+
     if model_params.val_frac > 0:
         train_seqs, train_weights, val_seqs, val_weights = split_sequences(
             msa_data.seqs, msa_data.weights, model_params.val_frac, model_params.seed
@@ -175,8 +199,13 @@ def train_ardca(model: ArDCA,
         train_seqs = torch.tensor(msa_data.seqs, dtype=torch.long).to(device)
         train_weights = torch.tensor(msa_data.weights, dtype=torch.float32).to(device)
     
+    # One-hot encode
+    train_X_oh = encode_sequence(train_seqs.cpu().numpy(), q=msa_data.q, device=device)
+    val_X_oh = None
+    if val_seqs is not None:
+        val_X_oh = encode_sequence(val_seqs.cpu().numpy(), q=msa_data.q, device=device)
+
     model = model.to(device)
-    
     model.init_parameters(train_seqs)
     
     # Optimizer
@@ -185,10 +214,6 @@ def train_ardca(model: ArDCA,
     elif model_params.optimizer.lower() == "adam":
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0)
     else: raise ValueError(f"Selected optimizer not configured: {model_params.optimizer}");
-    
-    # Data loader
-    batch_size = min(1000, len(train_seqs)) 
-    train_loader = create_data_loader(train_seqs, train_weights, batch_size, shuffle=True)
     
     # Training history
     history = {
@@ -204,57 +229,24 @@ def train_ardca(model: ArDCA,
     patience = 20
     eval_interval = 10
     
-    for epoch in tqdm(range(model_params.max_iters), desc="Training"):
+    for epoch in range(model_params.max_iters):
         model.train()
-        epoch_loss = 0.0
-        epoch_nll = 0.0
-        
-        for batch_seqs, batch_weights in train_loader:
-            if model_params.optimizer.lower() == "lbfgs":
-                # Define the closure function for LBFGS
-                def closure():
-                    optimizer.zero_grad()
-                    loss, _ = model.loss(
-                        batch_seqs, 
-                        batch_weights,
-                        lambda_J=model_params.lambda_J,
-                        lambda_h=model_params.lambda_h
-                    )
-                    loss.backward()
-                    return loss
-                
-                # Step with closure for LBFGS
-                optimizer.step(closure)
-                
-                # Compute loss for logging (after optimization)
-                loss, info = model.loss(
-                    batch_seqs, 
-                    batch_weights,
-                    lambda_J=model_params.lambda_J,
-                    lambda_h=model_params.lambda_h
-                )
-            else:
-                # Standard optimization for Adam and others
-                optimizer.zero_grad()
-                
-                loss, info = model.loss(
-                    batch_seqs, 
-                    batch_weights,
-                    lambda_J=model_params.lambda_J,
-                    lambda_h=model_params.lambda_h
-                )
-                loss.backward()
-                
-                optimizer.step()
-
-            model.clamp_unused()
-
-            epoch_loss += loss.item()
-            epoch_nll += info['nll'].item()
+        optimizer.zero_grad()
+            
+        loss, info = model.loss(
+                train_X_oh, 
+                train_seqs,
+                train_weights,
+                lambda_J=model_params.lambda_J,
+                lambda_h=model_params.lambda_h
+        )
+        loss.backward()
+        optimizer.step()
+        model.clamp_unused()
         
         # Record training metrics
-        history['train_loss'].append(epoch_loss / len(train_loader))
-        history['train_nll'].append(epoch_nll / len(train_loader))
+        history['train_loss'].append(loss.item())
+        history['train_nll'].append(info['nll'].item())
         
         # Validation
         if epoch % eval_interval == 0:
@@ -262,12 +254,13 @@ def train_ardca(model: ArDCA,
                 model.eval()
                 with torch.no_grad():
                     val_loss, val_info = model.loss(
-                        val_seqs, 
+                        val_X_oh, 
+                        val_seqs,
                         val_weights,
                         lambda_J=model_params.lambda_J,
                         lambda_h=model_params.lambda_h
                     )
-                    val_metrics = model.evaluate(val_seqs, val_weights)
+                    val_metrics = model.evaluate(val_X_oh, val_seqs, val_weights)
                 
                 history['val_loss'].append(val_loss.item())
                 history['val_nll'].append(val_info['nll'].item())
@@ -288,7 +281,7 @@ def train_ardca(model: ArDCA,
                     break
             else:
                 print(f"Epoch {epoch}: Train Loss={history['train_loss'][-1]:.4f}")
-    
+
     return model, history
 
 
@@ -300,6 +293,7 @@ def main_training_pipeline(fasta_file: str,
                           identity_thresh: float = 0.2,
                           val_frac: float = 0.1,
                           max_iters: int = 200,
+                          optimizer: str = "adam",
                           seed: int = 42,
                           device: str = 'cpu') -> Tuple[ArDCA, Dict[str, list], MSAData]:
     """
@@ -347,7 +341,7 @@ def main_training_pipeline(fasta_file: str,
     model_params = ModelParams(
         lambda_h=lambda_h,
         lambda_J=lambda_J,
-        optimizer='LBFGS',
+        optimizer=optimizer,
         max_iters=max_iters,
         seed=seed,
         val_frac=val_frac
@@ -370,11 +364,11 @@ def main_training_pipeline(fasta_file: str,
         msa_data.seqs, msa_data.weights, val_frac, seed
     )
 
-    train_data = (torch.tensor(train_seqs, dtype=torch.long).to(device),
-                 torch.tensor(train_weights, dtype=torch.float32).to(device))
+    train_X_oh = encode_sequence(train_seqs, q=msa_data.q, device=device)
+    val_X_oh = encode_sequence(val_seqs, q=msa_data.q, device=device)
+    train_data = (train_X_oh, torch.tensor(train_seqs, dtype=torch.long).to(device), torch.tensor(train_weights, dtype=torch.float32).to(device))
+    val_data = (val_X_oh, torch.tensor(val_seqs, dtype=torch.long).to(device), torch.tensor(val_weights, dtype=torch.float32).to(device))
     
-    val_data = (torch.tensor(val_seqs, dtype=torch.long).to(device),
-               torch.tensor(val_weights, dtype=torch.float32).to(device))
     
     train_metrics = model.evaluate(*train_data)
     val_metrics = model.evaluate(*val_data)
@@ -382,5 +376,39 @@ def main_training_pipeline(fasta_file: str,
     print(f"Final train NLL: {train_metrics['nll_per_pos']:.4f}")
     print(f"Final val NLL: {val_metrics['nll_per_pos']:.4f}")
     print(f"Final val perplexity: {val_metrics['perplexity']:.4f}")
+
+    save_ardca_model(model, "ardca_model.pt")
     
     return model, history, msa_data
+
+
+def save_ardca_model(model, save_path, extra_params=None):
+    """
+    Save arDCA model state and parameters.
+    """
+    checkpoint = {
+        'state_dict': model.state_dict(),
+        'L': model.L,
+        'q': model.q,
+        'lambda_h': model.lambda_h,
+        'lambda_J': model.lambda_J,
+    }
+    if extra_params is not None:
+        checkpoint.update(extra_params)
+    torch.save(checkpoint, save_path)
+
+def load_ardca_model(load_path, device='cpu'):
+    """
+    Load arDCA model from checkpoint.
+    """
+    checkpoint = torch.load(load_path, map_location=device)
+    model = ArDCA(
+        L=checkpoint['L'],
+        q=checkpoint['q'],
+        lambda_h=checkpoint.get('lambda_h', 1e-6),
+        lambda_J=checkpoint.get('lambda_J', 1e-4)
+    )
+    model.load_state_dict(checkpoint['state_dict'])
+    model = model.to(device)
+    model.eval()
+    return model

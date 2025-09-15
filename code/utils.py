@@ -17,7 +17,6 @@ AA2IDX = {aa:i for i, aa in enumerate(ALPHABET)}
 def aa2idx(aa: str) -> int:
     return AA2IDX.get(aa.upper(), 0)
 
-
 def read_fasta_alignment(filename: str, max_gap_fraction: float,  max_col_gap_fraction=None) -> np.ndarray:
     """Parses an MSA in FASTA file -> returns matrix of intergers 
     discard if seq contains a fraction of gaps >  `max_gap_fraction` - set 1 to keep all
@@ -54,14 +53,13 @@ def read_fasta_alignment(filename: str, max_gap_fraction: float,  max_col_gap_fr
 
     return idx_matrix
 
-
-def encode_sequence(X_idx: np.ndarray) -> torch.Tensor:
-    """Builds X_onehot from X_idx of shape [M, L, q] (0/1 per residue)"""
-    A = torch.tensor(X_idx)
-    X_one_hot = F.one_hot(A.long(), num_classes=21)
-
-    return X_one_hot.float()
-
+def encode_sequence(X_idx: np.ndarray, q: int = 21, device: str = "cpu") -> torch.Tensor:
+    """
+    Convert index-encoded sequences [M,L] into one-hot [M,L,q].
+    """
+    A = torch.as_tensor(X_idx, dtype=torch.long, device=device)
+    X_one_hot = F.one_hot(A, num_classes=q).to(torch.float32)
+    return X_one_hot
 
 def compute_weights(X_idx: np.ndarray, 
                     theta: float | None,
@@ -103,7 +101,6 @@ def compute_weights(X_idx: np.ndarray,
     M_eff = float(W.sum())
     return W, M_eff
 
-
 def compute_empirical_f1(X_idx: np.ndarray, W: np.ndarray, q: int):
     """
     Compute empirical single-site frequency counts weighted by W
@@ -114,7 +111,6 @@ def compute_empirical_f1(X_idx: np.ndarray, W: np.ndarray, q: int):
     for i in range(L):
         f1[i] = np.bincount(X_idx[:, i], weights=W, minlength=q)
     return f1
-
 
 def compute_empirical_f2(X_idx: np.ndarray, W: np.ndarray, q: int):
     """
@@ -151,20 +147,12 @@ def split_sequences(X: np.ndarray, W: np.ndarray, val_frac: float = 0.2, seed: i
     return X[train_idx], W[train_idx], X[val_idx], W[val_idx]
 
 
-def create_data_loader(seqs: torch.Tensor, weights: torch.Tensor, 
-                      batch_size: int, shuffle: bool = True) -> DataLoader:
-    """Create DataLoader for training."""
-    dataset = TensorDataset(seqs, weights)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-
-
 # -- analyzing results --
 def one_hot_for_pca(idx_mat: np.ndarray, q: int = 21) -> np.ndarray:
     M, L = idx_mat.shape
     onehot = np.eye(q, dtype=np.float32)[idx_mat]      # (M, L, q)
     X = onehot.reshape(M, L * q)                       # (M, L*q)
     return X
-
 
 def pca_from_onehot(idx_mat: np.ndarray, n_components=2):
     X = one_hot_for_pca(idx_mat)            # (M, L*q)

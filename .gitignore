@@ -3,6 +3,7 @@
 
 code/__pycache__
 code/.arvenv
+code/ardca_model.pt
 
 data
 
