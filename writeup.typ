@@ -507,8 +507,33 @@ Furthermore, loops have different behaviors in the languages. Julia loops are co
 The final important difference is in compilation versus interpretation. Julia JIT compiles functions to machine code, which has an initial compilation cost, but allows future calls to run much faster. On the other hand, Python is interpreted, thus heavy computations require external libraries which are precompiled in other, more efficient, languages.
 
 == Implementation details
-For our implementation, we made use of PyTorch's ecosystem. The autoregressive network was created through a $mono("nn.Module")$
+We implement the autoregressive network within the PyTorch ecosystem, using the $mono("nn.Module")$ interface to leverage its training and optimization capabilities. The central operation of the model is the computation of the autoregressive logits, which define the conditional distribution at each sequence position. 
+For site $i$, the logit vector is given by
+$
+  z[m,i,a] = h[i,a] + sum_(j<i) sum_b J[i,j,a,b] X[m,j,b]
+$ 
+where h and J are the previously discussed local biases and pairwise couplings. $X$ is a tensor holding the one-hot encoding of the symbol $b$ observed at site $j$ in sequence $m$.
 
+To compute the autoregressive logits, our initial implementation employed a masked matrix multiplication, performed in a single step using the `einsum` operator. While correct, and more efficient than naive loops, this aproach proved computationally inefficient: the full interaction matrix was calculated, even though the contributions from the upper-triangular part were masked to zero.
+To address this, we devised a more efficient formulation that explicitly exploits the block-sparse structure of the coupling matrix. Specifically, we collect all lower-triangular index pairs $(i, j)$ with $j<i$, extract the corresponding coupling blocks extracted $J[i, j]$, and accumulate their contributions through an `einsum` operation. The resulting implementation only computes terms required by the autoregressive factorization, removing unnecessary computation.
+
+```Python
+def compute_ar_logits(self, X_oh: torch.Tensor):
+        """z[m,i,a] = h[i,a] + sum_{j<i} sum_b J[i,j,a,b] * X[m,j,b]"""
+        X_oh = X_oh.to(self.J.dtype)
+        M, L, q = X_oh.shape
+        logits = self.h_pos.unsqueeze(0).expand(M, -1, -1).clone()  # (M,L,q)
+
+        # collect lower-triangular index pairs
+        i_idx, j_idx = torch.tril_indices(L, L, offset=-1)
+        J_blocks = self.J[i_idx, j_idx]   # (n_pairs, q, q)
+        X_blocks = X_oh[:, j_idx]         # (M, n_pairs, q)
+
+        # compute pairwaise contributions and accumulate into logits
+        contrib = torch.einsum("mpq,pqr->mpr", X_blocks, J_blocks) 
+        logits = logits.index_add(1, i_idx, contrib)
+        return logits
+```
 
 == Computational challenges
 
