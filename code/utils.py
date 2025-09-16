@@ -5,10 +5,11 @@ from Bio import AlignIO
 from typing import Tuple, Union
 import gzip
 from sklearn.decomposition import PCA
-from torch.utils.data import DataLoader, TensorDataset
+import json
+import os
+import matplotlib.pyplot as plt
 
 
-# -- loading and processing data --
 q = 21
 
 ALPHABET = "-ACDEFGHIKLMNPQRSTVWY"
@@ -145,6 +146,41 @@ def split_sequences(X: np.ndarray, W: np.ndarray, val_frac: float = 0.2, seed: i
     m_val = max(1, int(round(val_frac * M)))
     val_idx, train_idx = idx[:m_val], idx[m_val:]
     return X[train_idx], W[train_idx], X[val_idx], W[val_idx]
+
+def save_training_history(history, save_dir, pf, version):
+    """
+    Save training history to a JSON file.
+    """
+    history_path = os.path.join(save_dir, f"training_history_{pf}_v{version}.json")
+    with open(history_path, 'w') as f:
+        json.dump(history, f, indent=4)
+    print(f"Training history saved to {history_path}")
+
+def load_all_histories(save_dir, pf, versions):
+    """
+    Load training histories for all versions of a model.
+    """
+    histories = {}
+    for version in versions:
+        history_path = os.path.join(save_dir, f"training_history_{pf}_v{version}.json")
+        with open(history_path, 'r') as f:
+            histories[version] = json.load(f)
+    return histories
+
+def plot_training_behavior(histories, metric="train_loss"):
+    """
+    Plot the training behavior for all versions.
+    """
+    plt.figure(figsize=(10, 6))
+    for version, history in histories.items():
+        plt.plot(history[metric], label=f"Version {version}")
+    
+    plt.xlabel("Epochs")
+    plt.ylabel(metric.replace("_", " ").capitalize())
+    plt.title(f"{metric.replace('_', ' ').capitalize()} Over Epochs")
+    plt.legend()
+    plt.grid()
+    plt.show()
 
 
 # -- analyzing results --

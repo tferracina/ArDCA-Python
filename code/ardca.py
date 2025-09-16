@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -285,17 +286,7 @@ def train_ardca(model: ArDCA,
     return model, history
 
 
-def main_training_pipeline(fasta_file: str,
-                          lambda_h: float = 1e-6,
-                          lambda_J: float = 1e-4,
-                          max_gap_fraction: float = 0.5,
-                          max_col_gap_fraction: Optional[float] = 0.3,
-                          identity_thresh: float = 0.2,
-                          val_frac: float = 0.1,
-                          max_iters: int = 200,
-                          optimizer: str = "adam",
-                          seed: int = 42,
-                          device: str = 'cpu') -> Tuple[ArDCA, Dict[str, list], MSAData]:
+def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], MSAData, float]:
     """
     Complete training pipeline for ArDCA.
     
@@ -314,6 +305,21 @@ def main_training_pipeline(fasta_file: str,
     Returns:
         (trained_model, training_history, msa_data)
     """
+    fasta_file = config.fasta_file
+    save_dir = config.save_dir
+    pf = config.pf
+    version = config.version
+    lambda_h = config.lambda_h
+    lambda_J = config.lambda_J
+    max_gap_fraction = config.max_gap_fraction
+    max_col_gap_fraction = config.max_col_gap_fraction
+    identity_thresh = config.identity_thresh
+    val_frac = config.val_frac
+    max_iters = config.max_iters
+    optimizer = config.optimizer
+    seed = config.seed
+    device = config.device
+
     print("Loading MSA data...")
     X_idx = read_fasta_alignment(
         fasta_file, 
@@ -351,12 +357,15 @@ def main_training_pipeline(fasta_file: str,
     model = ArDCA(L=msa_data.L, q=msa_data.q, lambda_h=lambda_h, lambda_J=lambda_J)
     
     print("Training ArDCA model...")
+    start_time = time.time()
     model, history = train_ardca(
         model=model,
         msa_data=msa_data,
         model_params=model_params,
         device=device
     )
+    end_time = time.time()
+    training_time = end_time - start_time
     
     # Evaluate final model
     print("Evaluating model...")
@@ -377,15 +386,17 @@ def main_training_pipeline(fasta_file: str,
     print(f"Final val NLL: {val_metrics['nll_per_pos']:.4f}")
     print(f"Final val perplexity: {val_metrics['perplexity']:.4f}")
 
-    save_ardca_model(model, "ardca_model.pt")
+    save_ardca_model(model, save_dir, pf, version)
+    save_training_history(history, save_dir, pf, version)
     
-    return model, history, msa_data
+    return model, history, msa_data, training_time
 
 
-def save_ardca_model(model, save_path, extra_params=None):
+def save_ardca_model(model, save_dir, pf, version, extra_params=None):
     """
     Save arDCA model state and parameters.
     """
+    save_path = f"{save_dir}/ardca_{pf}_v{version}.pt"
     checkpoint = {
         'state_dict': model.state_dict(),
         'L': model.L,
@@ -396,6 +407,7 @@ def save_ardca_model(model, save_path, extra_params=None):
     if extra_params is not None:
         checkpoint.update(extra_params)
     torch.save(checkpoint, save_path)
+    print(f"Model saved to {save_path}")
 
 def load_ardca_model(load_path, device='cpu'):
     """
