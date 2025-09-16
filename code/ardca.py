@@ -267,9 +267,6 @@ def train_ardca(model: ArDCA,
                 history['val_nll'].append(val_info['nll'].item())
                 history['val_perplexity'].append(val_metrics['perplexity'])
                 
-                print(f"Epoch {epoch}: Train Loss={history['train_loss'][-1]:.4f}, "
-                      f"Val Loss={val_loss.item():.4f}, Val Perplexity={val_metrics['perplexity']:.4f}")
-                
                 # Early stopping
                 if val_loss.item() < best_val_loss - 1e-6:
                     best_val_loss = val_loss.item()

@@ -51,7 +51,7 @@ The size of the protein sequence space makes exhaustive experimental exploration
 
 This wealth of data has enabled the development of advanced statistical and machine learning models capable of simulating protein sequence evolution, prediciting structural conformations, and generating novel sequences with desired properties. In addition, breakthroughs in protein structure prediction--most notably the Nobel Prize winning AlphaFold@alphafold --that computational methods can rival experimental accuracy, in a much cheaper manner.
 
-In this work, we explore the implementation of an autoregressive network for protein sequence generation leveraging the Direct Coupling Analysis (DCA) method to model residue-residue dependencies. In Section 2, the biological background will be laid out. Section 3 will introduce the mathematical foundations. Section 4 will detail previous iterations of similar models, while Section 5 will explore our implementation (and improvements).
+In this work, we will implement an efficient autoregressive network for protein sequence generation leveraging the Direct Coupling Analysis (DCA) in Python. In Section 2, the biological background will be laid out. Section 3 will introduce the mathematical foundations. Section 4 will detail previous iterations of similar models, while Section 5 will explore our implementation (and improvements).
 
 = Biological Background
 
@@ -230,11 +230,11 @@ between the couplings and the connected correlation matrix. The couplings are th
 $
   e_(i j) (A, B) = - (C^(-1))_(i j)(A,B),
 $
-where $C$ is treated as a $((q-1)L) crossmark ((q-1)L)$ matrix, and the pair $(i, A)$ is regarded as a single index. The full derivation can be found in @app2.
+where $C$ is treated as a $((q-1)L) times ((q-1)L)$ matrix, and the pair $(i, A)$ is regarded as a single index. The full derivation can be found in @app2.
 
 In practice, the correlation matrix is often singular without regularization. mfDCA opts to use a strong pseudocount ($lambda approx M_"eff"$) to stabilize the inversion and prevent spurious large couplings.
 
-Once the estimate of the pair couplings $e_(i j) (A,B)$ is inferred, we need a way to rank residue pairs by their interaction strength. The $(q-1) crossmark (q-1)$-dimensional coupling matrices need to map to a single scalar parameter. We can do this through the direct information (DI) @weigt2009. To begin, for each pair $(i, j)$ a two-site model is constructed:
+Once the estimate of the pair couplings $e_(i j) (A,B)$ is inferred, we need a way to rank residue pairs by their interaction strength. The $(q-1) times (q-1)$-dimensional coupling matrices need to map to a single scalar parameter. We can do this through the direct information (DI) @weigt2009. To begin, for each pair $(i, j)$ a two-site model is constructed:
 $
   P_(i j)^"(dir)" (A,B) = 1 / Z_(i j) exp( e_(i j) (A,B) + tilde(h)_i (A) + tilde(h)_j (B)),
 $
@@ -411,7 +411,7 @@ Chains may be transient, reinitialized every epoch, or persistent, initialized o
 
 *Convergence and quality control*
 
-A practical convergence proxy is the differnece between the empriical and the model two-site connected correlations:
+A practical convergence proxy is the difference between the empirical and the model two-site connected correlations:
 $
   epsilon_c = max_(i,j,a,b) abs(c_(i j)^"model" (a,b)-c_(i j)^"emp" (a,b)) quad"where" \ quad c_(i j)^"model" = p_(i j)-p_i p_j, quad c_(i j)^"emp" = f_(i j)-f_i f_j
 $
@@ -437,7 +437,7 @@ $cal(l)_2$ reduces variance and improves conditioning by smoothly shrinking all 
 
 The second method is introducing sparsity via pruning or decimation. The reason for this is that true contact maps in nature are indeed sparse; most residue pairs are not in direct physical contact. Encoding this structural prior can reduces variance and speed up learning. There are two approaches:
 + A priori topology. Reduce the number of parameters by starting from a restricted edge set, for example pairs with high MI, and learn only those $J_(i j)$, omitting the rest.
-+ Information-based decimation. In this approach, start dense and iteratively remove the least informative couplings until target sparsity. This can be done by comparing the KL divergence for a candidate element. This directly controls overfitting by only keeping the paramets that actually affect the model's predictions.
++ Information-based decimation. In this approach, start dense and iteratively remove the least informative couplings until target sparsity. This can be done by comparing the KL divergence for a candidate element. This directly controls overfitting by only keeping the parameters that actually affect the model's predictions.
 In short, pruning and decimation prevent overfitting by removing parameters that don't materially alter the model, and have the added benefit of aligning with the biological prior of contact sparsity.
 
 
@@ -457,7 +457,7 @@ $
   &= arg max_{J, h} sum_(m=1)^M log product_(i=1)^L P(a_i^m|a_(i-1)^m,...,a_1^m) \
   &= arg max_{J, h} sum_(m=1)^M sum_(i=1)^L log P(a_i^m|a_(i-1)^m,...,a_1^m)
 $ <lhmax>
-Each $h_i(a)$ and $J_(i j)(a,b)$ is present in only one conditional probability $P(a_i|a_(i-1),...,a_1)$, thus we can maximize each conditional probability indepdently in @lhmax:
+Each $h_i(a)$ and $J_(i j)(a,b)$ is present in only one conditional probability $P(a_i|a_(i-1),...,a_1)$, thus we can maximize each conditional probability independently in @lhmax:
 $
   {J_(i j)^*, h_i^*} = arg max_{J_(i j), h_i} sum_(m=1)^M [h_i (a_i^m) + sum_(j=1)^(i-1) J_(i j) (a_i^m, a_j^m) - log z_i (a_(i-1)^m, ..., a_1^m)]
 $
@@ -493,26 +493,28 @@ For regularization, arDCA makes use of $ell_2$ penalties, with different strengt
 
 This lightweight approach performs at a similar accuracy of previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @weigt2020. It presents an important innovation also due to its mathematical advantages, which will be explored further, leading to improved applicability in sequence generation and evaluation.
 
-= Implementation and Extension
+= Implementation and Exploration
 The original ArDCA model was developed in Julia, a language designed for high-performance numerical and scientific computing. Julia's strengths lie in just-in-time (JIT) compilation, seamless handling of linear algebra, and built-in support for parallelism, making it well-suited for implementing large-scale statistical models.
 
 In contrast, the re-implementation was carried out in Python, a widely adopted language for machine learning and data science. While Python itself is generally slower due to its interpreted nature, performance-critical operations are offloaded to highly optimized libraries (e.g., NumPy, SciPy, PyTorch), which use underlying C/C++ or Fortran code. This ecosystem makes Python particularly attractive for model development, as it provides a wide range of frameworks, pre-built optimization routines, and strong community support.
 
 *Important Differences Between Julia and Python*
 
-There are some features of the languages that makes the porting not a simple one-to-one translation. To begin, Julia uses column-major order, which akes column-wise operations very fast and easily cached. This is in complete contrast to Python which is strucutred with row-major order where row-wise operations are more optimized. The impact of this difference is that loops and reshaping operations need to be reconsidered for memory efficiency. In addition, Julia is 1-indexed whereas Python is 0-indexed. This has no effect on the performance, but it changes the bounds on loops, the indexing of objects, and the range functions.
+There are some features of the languages that makes the porting not a simple one-to-one translation. To begin, Julia uses column-major order, which akes column-wise operations very fast and easily cached. This is in complete contrast to Python which is structured with row-major order where row-wise operations are more optimized. The impact of this difference is that loops and reshaping operations need to be reconsidered for memory efficiency. In addition, Julia is 1-indexed whereas Python is 0-indexed. This has no effect on the performance, but it changes the bounds on loops, the indexing of objects, and the range functions.
 
 Furthermore, loops have different behaviors in the languages. Julia loops are compiled down to efficient machine code with JIT. There exist a macro that removes the bounds checking, making loops fast without the need for vectorization. On the other hand, pure Python loops are slow. To reach the same level of efficiency vectorization is needed in Python, implemented via NumPy or broadcasting.
 
 The final important difference is in compilation versus interpretation. Julia JIT compiles functions to machine code, which has an initial compilation cost, but allows future calls to run much faster. On the other hand, Python is interpreted, thus heavy computations require external libraries which are precompiled in other, more efficient, languages.
 
 == Implementation details
-We implement the autoregressive network within the PyTorch ecosystem, using the $mono("nn.Module")$ interface to leverage its training and optimization capabilities. The central operation of the model is the computation of the autoregressive logits, which define the conditional distribution at each sequence position. 
+We implement the autoregressive network within the PyTorch ecosystem, using the $mono("nn.Module")$ interface to leverage its training and optimization capabilities. The model was trained on the CPU with an Apple M1 chip. The central operation of the model is the computation of the autoregressive logits, which define the conditional distribution at each sequence position. 
+
+*Logit Computation* \
 For site $i$, the logit vector is given by
 $
   z[m,i,a] = h[i,a] + sum_(j<i) sum_b J[i,j,a,b] X[m,j,b]
 $ 
-where h and J are the previously discussed local biases and pairwise couplings. $X$ is a tensor holding the one-hot encoding of the symbol $b$ observed at site $j$ in sequence $m$.
+where h and J are the local biases and pairwise couplings, and  $X$ is a tensor holding the one-hot encoding of the symbol $b$ observed at site $j$ in sequence $m$.
 
 To compute the autoregressive logits, our initial implementation employed a masked matrix multiplication, performed in a single step using the `einsum` operator. While correct, and more efficient than naive loops, this aproach proved computationally inefficient: the full interaction matrix was calculated, even though the contributions from the upper-triangular part were masked to zero.
 To address this, we devised a more efficient formulation that explicitly exploits the block-sparse structure of the coupling matrix. Specifically, we collect all lower-triangular index pairs $(i, j)$ with $j<i$, extract the corresponding coupling blocks extracted $J[i, j]$, and accumulate their contributions through an `einsum` operation. The resulting implementation only computes terms required by the autoregressive factorization, removing unnecessary computation.
@@ -534,17 +536,92 @@ def compute_ar_logits(self, X_oh: torch.Tensor):
         logits = logits.index_add(1, i_idx, contrib)
         return logits
 ```
+With this formulation, the computational complexity scales with the number of lower-triangular pairs rather than the full $L times L$ coupling matrix. For long sequences, this is especially beneficial. In addition, by avoiding the construction of the full masked interaction matrix, the memory footprint is roughly halved, from $L^2$ couplings to $L(L-1) / 2$.
 
-== Computational challenges
+Throughout the model, an explicit binary mask `J_mask` is maintained that encodes the lower-triangular structure, to ensure consistency in the autoregressive aspect. After each optimization step, unused entries of $J$ are clamped to zero.
 
-- Benchmarks
+*Training details* \
+The model is initialized with the local bias of the first position, $h[0]$, being defined from the empirical frequencies. The rest of the parameters are drawn from small random distributions, an exploration will be done on initial conditions in the following section.
+Training also incorporates sequence reweighting to correct for redundancy in MSAs. The weights for each sequence are computed at the start, with parameter `theta` controlling the sequence similarity threshold.
+The model is set up to be optimized with both L-BFGS, suited for energy-based models, as well as AdamW, offering a more scalable and robust option for large datasets. Regularization is applied separately to the field and coulings via $ell_2$-norm penalties with hyperparameters $lambda_h$ and $lambda_J$.
 
-Evaluation with Boltz-2 / AlphaFold3
+*Evaluation* \
+For evaluation, the model reports the negative log-likelihood (NLL), perplexity, and the effective sample size, to make the results more easily comparable across different datasets. Finally, an ancestral sampling procedure is provided, which generates new sequences position by position using the learned conditional distributions. This procedure is inherently slower than parallel inference, but it guarantees that samples are consistent with the autoregressive structure.
+
+
+== Experiments
+
+The local field of the first sequence position is initialized from observed empirical frequencies, ensuring a well-scaled starting point for the training process. For the rest of the parameters, there are 
+
+=== Effect of Gaps in Multiple Sequence Alignments
+When constructing MSAs, gaps are intro introduced to better align homologous positions across sequences. These gaps serve two main purposes: (i) ensuring residues align correctly at homologous sites, and(ii) extending sequences to a fixed length so models like ArDCA (which require fixed length input) can be applied.
+
+Since the presence of gaps can influence the statistical properties of the alignment, we examined how restricting the fraction of gaps affects results. Specifically, we introduced two filtering parameters:
+- `max_gap_fraction`: sets the maximum allowed fraction of gaps per sequence. 
+- `max_col_gap_fraction`: sets the maximum allowed fraction of gaps in a column.
+
+For this experiment, we varied `max_gap_fraction`, while hold the other fixed, using three thresholds: $0.05, 0.1, "and" 0.3$. The largest value ($0.3$) does not exclude any sequences from the original MSA and was therefore used as a baseline for comparison. For the time taken, each model was ran 5 times then an average was taken. 
+
+*Results*
+
+#align(center)[
+#block(width: 80%,)[
+  #table(
+    columns: (auto, 1fr, 1fr, 1fr, auto),
+    table.vline(x: 1, start: 1),
+    table.header[`max_gap_fraction`][M][$M_"eff"$][Time(s)][Final Perplexity],
+    [0.05], [12784], [3876.5], [379.54], [1.72],
+    [0.1], [13376], [4145.4], [350.26], [1.63],
+    [0.3], [13600], [4248.8], [392.29], [1.77]
+  )
+]]
+Restricting the allowed fraction of gaps resulted in the removal of sequences and a corresponding decrease in the effective number of sequences $M_"eff"$. The strictest filterint criterion ($0.03$) removed approximately 8.7% of sequences relative to the baseline, yielding a smaller dataset and slightly worse perplexity. The lowest perplexity ($1.63$) and fastest time ($344 s$) was observed when 10% of gaps were excluded. Although the full dataset had a higher $M_"eff"$, the higher perplexity suggests that allowing too many gaps may negatively impact the quality fo the alignment.
+
+#image("image-1.png") 
+
+A similar exploration was performed for the column gaps, but the results weren't strong enough to warrant a reflection.
+Removing 1, 5, and 10 made it...
+
+No exploration was performed on the identity threshold as there has been extensive work in this regard in previous papers, unanimously reporting that 0.8 is the best figure for most cases.
+
+=== Datasets 
+Different protein families were analyzed and explored in the evaluation of the model.
+
+#align(center)[
+#block(width: 70%,)[
+  #table(
+    columns: (auto, 1fr, 1fr, 1fr),
+    table.vline(x: 1, start: 1),
+    table.header[$bold("Protein Family")$][M][L][$M_"eff"$ #footnote[Calculated with sequence identity threshold 0.8]],
+    [PF00014], [13600], [53], [4208.5],
+    [PF00076], [137605], [70], [],
+    [PF00072], [823798], [112], [],
+    [PF13354], [7515], [202], [],
+  )
+]]
+
+=== Evaluation Metrics
+
+
 
 = Results and Discussion
 
+== Training Behavior
+ArDCA benefits from exact gradients, meaning the loss curves are smooth and the convergence is direct. In all of the trials, there was minimal overfitting, the validation loss decreased just as the training loss did.
+
+== Generative Model Quality
+The final test for the models is their ability to generate accurate sequences. For this we can use AlphaFold's plDDT @AlphaFold_pLDDT, 
+
+== (())Contact Prediction(())
+
+== Limitations and Insights
+
+= Conclusion
+
+#pagebreak()
 #bibliography("references.bib")
 
+#pagebreak()
 #show: appendix
 
 = Full Langrage Multipliers Calculation for Maximum Entropy Principle <app1>
@@ -560,6 +637,7 @@ $
   e^(-lambda)Z(mu) = 1 => lambda = ln Z(mu)
 $
 
+#pagebreak()
 = Small Coupling Mean-Field Derivation <app2>
 #counter(math.equation).update(0)
 Start with the perturbed Hamiltonian
@@ -610,6 +688,7 @@ $
 $
 This equation allows us to solve the original inference in the mean-field approximation in a single step. To determine the marginals of the empirical freqiencies, we just need to determine the empirical connected correlation matrix and invert it to get the couplings $e_(i j)$. 
 
+#pagebreak()
 = Adaptive MCMC Sampling in adabmDCA <app3>
 To ensure accurate estimation of the marginals, adabmDCA monitors both equilibration and decorrelation of the Markov chains through sequence overlaps. For two sampled sequences $s^i_n, s^k_m in cal(A)^L$, the normalized overlap is defined as
 $
