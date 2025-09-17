@@ -40,8 +40,6 @@
 #set heading(numbering: "1.")
 #outline()
 
-#outline(target: heading.where(supplement: [Appendix]), title: [Appendix])
-
 #pagebreak()
 = Introduction
 
@@ -179,14 +177,14 @@ where $h_i$ are site-specific fields and $J_(i j)$ are coupling parameters betwe
 = Evolution of DCA Methods
 
 == Mean-field DCA (2011)
-The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. @mfDCA, provided the first computationally feasible approximation of the Potts model. The idea is to approximate weak correlations via a small-coupling expansion, which reduces the inference problem to the inversion of a correlation matrix.
+The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. @mfDCA, provided the first computationally feasible approximation of the Potts model. The idea is to approximate a small-coupling expansion, valid when correlations between sites are weak which reduces the inference problem to the inversion of a correlation matrix.
 
 === Method
 To begin, the raw frequency counts suffer from sampling bias, so the weight of highly similar sequences is reduced. Each sequence $sigma^((a))$ is assigned a weight
 $
-  w_m = 1 / m^a, quad "with" m^a = lr(|{b in{1, ..., M}|"sim"(sigma^((a)),sigma^((b))) >= x}|),
+  w_m = 1 / lr(|{b in{1, ..., M}:"sim"(sigma^((a)),sigma^((b))) >= x}|),
 $ <weight>
-where M is the number of sequences in the MSA and sim is their similarity #footnote[The original paper used "seqid" to represent percentage identity. We chose "sim" as the future methods adopted this notation.]. The $x$ represents the identity threshold, which was empirically found to be best at $x=0.8$. The effective weight of a sequence $m$ is $w_m$, and the total effective number of sequences is
+where M is the number of sequences in the MSA and sim is their similarity #footnote[The original paper used "seqid" to represent percentage identity. We chose "sim" as the future methods adopted this notation.]. The $x$ represents the sequence identity threshold, which was empirically found to be best at $x=0.8$. The effective weight of a sequence $m$ is $w_m$, and the total effective number of sequences is
 $
   M_("eff") = sum_(m=1)^M w_m.
 $ <M_eff>
@@ -195,7 +193,7 @@ $
   f_i (A) &= 1 / (M_("eff") + lambda) (lambda / q + sum_(m=1)^M w_m delta(A, sigma_i^((m)))) \
   f_(i j)(A, B) &= 1 / (M_("eff") + lambda) (lambda / q^2 + sum_(m=1)^M w_m delta(A, sigma_i^((m))) delta(B, sigma_j^((m))))
 $
-where $q=21$ is the amino acid alphabet with the gap symbol, and $lambda$ is a pseudocount parameter used for regularization. The gauge choice employed in mfDCA is defining a reference state. Typically, it is set as the last amino acid $A=q$. This gives us
+where $q=21$ is the amino acid alphabet with the gap symbol, and $lambda$ is a pseudocount parameter used for regularization. The gauge choice employed in mfDCA is defining a reference state to remove redundancy among parameters and ensure identifiability, while preserving all physically relevant couplings. Typically, it is set as the last amino acid $A=q$. This gives us
 $
   forall i,j: J_(i j)(a, q) = J_(i j)(q, a) = h_i (q) = 0
 $
@@ -232,7 +230,7 @@ While mfDCA represented a breakthrough in usability of DCA, the simplifying appr
 - Pseudocount dependence: due to the algorithm's vast parameter size (in the order of $400N^2$) strong regularization is required. This makes the choice of the pseudocount $lambda$ significantly affect performance.
 
 == Pseudo-likelihood Maximization DCA (2013)
-The pseudolikelihood maximization DCA (plmDCA) algorithm replaces the intractable full-likelihood fit of the Potts model (which earlier methods approximated) with a tractable product of conditional likelihoods. Concretely, the inverse Potts problem on an alignment of length $L$ becomes $L$ coupled multinomial logistic regressions rather than a single optimization over the global partition function.
+While mfDCA provided a fast approximation, it relied on strong assumptions. Pseudolikelihood maximization (plmDCA) relaxed these by fitting sitewise conditional probabilities directly. Concretely, the inverse Potts problem on an alignment of length $L$ becomes $L$ coupled multinomial logistic regressions rather than a single optimization over the global partition function.
 
 === Method
 We retain the Potts parametrization of fields and couplings introduced in @potts. Similar to mfDCA, sequences are reweighted using $w_m$ defined in @weight and the effective sample size $M_"eff"$ defined in @M_eff.
@@ -241,7 +239,7 @@ We retain the Potts parametrization of fields and couplings introduced in @potts
 
 The pivotal idea is to optimize pseudolikelihoods. For site $r$, the conditional distribution given all other sites $sigma_(\\ r)$ is
 $
-  P(sigma_r = A | sigma_(\\ r)) = (exp(h_r (A)+sum_(i!=r)J_(r i)(A, sigma_i))) / (sum_(k=1)^q exp(h_r (B)+sum_(i!=r)J_(r i)(B, sigma_i)))).
+  P(sigma_r = A | sigma_(\\ r)) = (exp(h_r (A)+sum_(i!=r)J_(r i)(A, sigma_i))) / (sum_(B=1)^q exp(h_r (B)+sum_(i!=r)J_(r i)(B, sigma_i)))).
 $
 The weighted sitewise negative log-pseudolikelihood is
 $
@@ -444,7 +442,7 @@ Unlike bmDCA, the equations do not enforce exact matching between model marginal
 
 === Key Contributions
 
-This lightweight approach performs at a similar accuracy of previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @Trinquier2021. It presents an important innovation also due to its mathematical advantages, which will be explored further, leading to improved applicability in sequence generation and evaluation.
+Unlike previous bmDCA, expectations are taken directly over the data rather than approximated by MCMC. This means the gradients will be exact which in turn will speed up training.Because of this, ArDCA is a lightweight approach that performs at a similar, or better, accuracy of previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @Trinquier2021. In addition, it allows for the calculation of exact sequence probabilities, which is crucial in homology detection.
 
 = Implementation and Exploration
 The original ArDCA model was developed in Julia, a language designed for high-performance numerical and scientific computing. Julia's strengths lie in just-in-time (JIT) compilation, seamless handling of linear algebra, and built-in support for parallelism, making it well-suited for implementing large-scale statistical models.
@@ -504,38 +502,48 @@ For evaluation, the model reports the negative log-likelihood (NLL), perplexity,
 
 == Experiments
 
-The local field of the first sequence position is initialized from observed empirical frequencies, ensuring a well-scaled starting point for the training process. For the rest of the parameters, there are 
-
 === Effect of Gaps in Multiple Sequence Alignments
-When constructing MSAs, gaps are intro introduced to better align homologous positions across sequences. These gaps serve two main purposes: (i) ensuring residues align correctly at homologous sites, and(ii) extending sequences to a fixed length so models like ArDCA (which require fixed length input) can be applied.
+When constructing MSAs, gaps are intro introduced to better align homologous positions across sequences. These gaps serve two main purposes: (i) ensuring residues align correctly at homologous sites, and (ii) extending sequences to a specific length for models like ArDCA, that require fixed length input.
 
 Since the presence of gaps can influence the statistical properties of the alignment, we examined how restricting the fraction of gaps affects results. Specifically, we introduced two filtering parameters:
 - `max_gap_fraction`: sets the maximum allowed fraction of gaps per sequence. 
 - `max_col_gap_fraction`: sets the maximum allowed fraction of gaps in a column.
 
-For this experiment, we varied `max_gap_fraction`, while hold the other fixed, using three thresholds: $0.05, 0.1, "and" 0.3$. The largest value ($0.3$) does not exclude any sequences from the original MSA and was therefore used as a baseline for comparison. For the time taken, each model was ran 5 times then an average was taken. 
-
-*Results*
+For the first experiment, we varied `max_gap_fraction`, while holding the other fixed, with three thresholds: $0.05, 0.1, "and" 1$. 1 does not exclude any sequences, therefore is used as a baseline for comparison. The difference in time of the models was also recorded, but given the small nature of the change, no conclusive results were observed. 
 
 #align(center)[
 #block(width: 80%,)[
-  #table(
-    columns: (auto, 1fr, 1fr, 1fr, auto),
-    table.vline(x: 1, start: 1),
-    table.header[`max_gap_fraction`][M][$M_"eff"$][Time(s)][Final Perplexity],
-    [0.05], [12784], [3876.5], [379.54], [1.72],
-    [0.1], [13376], [4145.4], [350.26], [1.63],
-    [0.3], [13600], [4248.8], [392.29], [1.77]
+  #figure(
+    table(
+      columns: (auto, 1fr, 1fr, auto),
+      table.vline(x: 1, start: 1),
+      table.header[`max_gap_fraction`][M][$M_"eff"$][Perplexity],
+      [0.05 (-6%)], [12784], [3876.5], [1.72],
+      [0.1 (-1.6%)], [13376], [4145.4], [1.63],
+      [1], [13600], [4248.8], [1.77]
+    ),
+    caption: [Results for `max_gap_fraction` experiment]
   )
 ]]
 Restricting the allowed fraction of gaps resulted in the removal of sequences and a corresponding decrease in the effective number of sequences $M_"eff"$. The strictest filterint criterion ($0.03$) removed approximately 8.7% of sequences relative to the baseline, yielding a smaller dataset and slightly worse perplexity. The lowest perplexity ($1.63$) and fastest time ($344 s$) was observed when 10% of gaps were excluded. Although the full dataset had a higher $M_"eff"$, the higher perplexity suggests that allowing too many gaps may negatively impact the quality fo the alignment.
 
-#image("image-1.png") 
+A similar exploration was performed for the column gaps with values  $0.025, 0.1, 1$. Again, 1 represents the baseline with no columns removed.
+#align(center)[
+#block(width: 80%,)[
+  #figure(
+    table(
+      columns: (auto, 1fr, 1fr, auto),
+      table.vline(x: 1, start: 1),
+      table.header[`max_col_gap_fraction`][L][$M_"eff"$][Perplexity],
+      [0.025 (-7.5%)], [49], [4363.0], [1.79],
+      [0.1 (-3.7%)], [51], [4105.9], [1.62],
+      [1], [53], [4248.8], [1.77]
+    ),
+    caption: [Results for `max_col_gap_fraction` experiment]
+  )
+]]
 
-A similar exploration was performed for the column gaps, but the results weren't strong enough to warrant a reflection.
-Removing 1, 5, and 10 made it...
-
-No exploration was performed on the identity threshold as there has been extensive work in this regard in previous papers, unanimously reporting that 0.8 is the best figure for most cases.
+Both sequence-level and site-level filtering yield a better result when using moderate thresholds, where exclude just the data with the most gaps improves model performance. Overly aggressive filtering discards useful information and hurts perplexity, while using the full dataset also doesn't reach the best performance.
 
 === Datasets 
 Different protein families were analyzed and explored in the evaluation of the model.
@@ -565,11 +573,12 @@ ArDCA benefits from exact gradients, meaning the loss curves are smooth and the 
 == Generative Model Quality
 The final test for the models is their ability to generate accurate sequences. For this we can use AlphaFold's plDDT @AlphaFold_pLDDT, 
 
-== (())Contact Prediction(())
 
 == Limitations and Insights
+The Python implementation, with its lower-triangular masked multiplication is efficient for Python standards, but due to Julia's improved the memory management and computation power, still doesn't compare.
 
 = Conclusion
+In this work, I reimplemented the autoregressive DCA model in Python and demonstrated its viability as a practical tool for protein sequence analysis. The PyTorch-based implementation introduced an efficient block-sparse formulation for computing autoregressive logits, reducing the computational cost and memory usage. Empirical validation across several protein families confirmed the correctness and robustness of the model, with smooth training dynamics and consistent improvements in negative log-likelihood, perplexity, and structural plausibility as measured by pLDDT. Additional experiments on gap filtering highlighted the importance of sequence quality control, while tests on larger Pfam families showed that the method remains tractable at scale. In the future, this work could benefit from GPU acceleration, to improve its speed, but also allow it to more easily work with large datasets. In addition, 
 
 #pagebreak()
 #bibliography("references.bib")
