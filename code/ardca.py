@@ -318,7 +318,7 @@ def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], 
     device = config.device
 
     print("Loading MSA data...")
-    X_idx = read_fasta_alignment(
+    X_idx = read_alignment(
         fasta_file, 
         max_gap_fraction=max_gap_fraction,
         max_col_gap_fraction=max_col_gap_fraction,

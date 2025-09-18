@@ -442,33 +442,30 @@ Unlike bmDCA, the equations do not enforce exact matching between model marginal
 
 === Key Contributions
 
-Unlike previous bmDCA, expectations are taken directly over the data rather than approximated by MCMC. This means the gradients will be exact which in turn will speed up training.Because of this, ArDCA is a lightweight approach that performs at a similar, or better, accuracy of previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @Trinquier2021. In addition, it allows for the calculation of exact sequence probabilities, which is crucial in homology detection.
+Unlike bmDCA, expectations are taken directly over the data rather than approximated by MCMC producing exact gradients that will speed up training. This makes ArDCA a lightweight alternative that performs at a similar, or better, accuracy than previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @Trinquier2021. In addition, this method allows for the computation of exact sequence probabilities, a process crucial crucial in homology detection.
 
 = Implementation and Exploration
-The original ArDCA model was developed in Julia, a language designed for high-performance numerical and scientific computing. Julia's strengths lie in just-in-time (JIT) compilation, seamless handling of linear algebra, and built-in support for parallelism, making it well-suited for implementing large-scale statistical models.
-
-In contrast, the re-implementation was carried out in Python, a widely adopted language for machine learning and data science. While Python itself is generally slower due to its interpreted nature, performance-critical operations are offloaded to highly optimized libraries (e.g., NumPy, SciPy, PyTorch), which use underlying C/C++ or Fortran code. This ecosystem makes Python particularly attractive for model development, as it provides a wide range of frameworks, pre-built optimization routines, and strong community support.
+The original ArDCA model was developed in Julia, a high-performance numerical and scientific computing language. Julia's strengths lie in just-in-time (JIT) compilation, seamless handling of linear algebra, and built-in support for parallelism, making it well-suited for implementing large-scale statistical models. In contrast, the re-implementation was carried out in Python, a widely adopted language for machine learning and data science. While Python itself is generally slower due to its interpreted nature, performance-critical operations are offloaded to highly optimized libraries (e.g., NumPy, SciPy, PyTorch), which use underlying C/C++ or Fortran code.
 
 *Important Differences Between Julia and Python*
 
-There are some features of the languages that makes the porting not a simple one-to-one translation. To begin, Julia uses column-major order, which akes column-wise operations very fast and easily cached. This is in complete contrast to Python which is structured with row-major order where row-wise operations are more optimized. The impact of this difference is that loops and reshaping operations need to be reconsidered for memory efficiency. In addition, Julia is 1-indexed whereas Python is 0-indexed. This has no effect on the performance, but it changes the bounds on loops, the indexing of objects, and the range functions.
+There are structural differences between Julia and Python that make porting between them not a simple one-to-one translation. To begin, Julia uses column-major order, prioritizing very fast and easily cachable operations for the columns. Instead, Python is structured with row-major order where row-wise operations are more optimized. The impact of this difference is that loops and reshaping operations defined in Julia need to be reconsidered to have the same speed and memory efficiency when defined in Python. Another difference is that  Julia is 1-indexed whereas Python is 0-indexed. This has no effect on the performance, but it changes the bounds on loops, the indexing of objects, and the range functions.
 
-Furthermore, loops have different behaviors in the languages. Julia loops are compiled down to efficient machine code with JIT. There exist a macro that removes the bounds checking, making loops fast without the need for vectorization. On the other hand, pure Python loops are slow. To reach the same level of efficiency vectorization is needed in Python, implemented via NumPy or broadcasting.
+Furthermore, loops have different behaviors in the languages. Julia loops are compiled down to efficient machine code with JIT. The `inbounds` macro removes the bounds checking on the loops, making them fast without the need for vectorization. On the other hand, pure Python loops are slow. To reach the same level of efficiency, vectorization is needed in Python, implemented via NumPy or broadcasting.
 
 The final important difference is in compilation versus interpretation. Julia JIT compiles functions to machine code, which has an initial compilation cost, but allows future calls to run much faster. On the other hand, Python is interpreted, thus heavy computations require external libraries which are precompiled in other, more efficient, languages.
 
 == Implementation details
-We implement the autoregressive network within the PyTorch ecosystem, using the $mono("nn.Module")$ interface to leverage its training and optimization capabilities. The model was trained on the CPU with an Apple M1 chip. The central operation of the model is the computation of the autoregressive logits, which define the conditional distribution at each sequence position. 
+We implement the autoregressive network within the PyTorch ecosystem, using the $mono("nn.Module")$ interface to leverage its training and optimization capabilities. The central operation of the model is the computation of the autoregressive logits, which define the conditional distribution at each sequence position. 
 
 *Logit Computation* \
 For site $i$, the logit vector is given by
 $
   z[m,i,a] = h[i,a] + sum_(j<i) sum_b J[i,j,a,b] X[m,j,b]
 $ 
-where h and J are the local biases and pairwise couplings, and  $X$ is a tensor holding the one-hot encoding of the symbol $b$ observed at site $j$ in sequence $m$.
+where $h$ and $J$ are the local biases and pairwise couplings, and  $X$ is a tensor holding the one-hot encoding of the symbol $b$ observed at site $j$ in sequence $m$.
 
-To compute the autoregressive logits, our initial implementation employed a masked matrix multiplication, performed in a single step using the `einsum` operator. While correct, and more efficient than naive loops, this aproach proved computationally inefficient: the full interaction matrix was calculated, even though the contributions from the upper-triangular part were masked to zero.
-To address this, we devised a more efficient formulation that explicitly exploits the block-sparse structure of the coupling matrix. Specifically, we collect all lower-triangular index pairs $(i, j)$ with $j<i$, extract the corresponding coupling blocks extracted $J[i, j]$, and accumulate their contributions through an `einsum` operation. The resulting implementation only computes terms required by the autoregressive factorization, removing unnecessary computation.
+To compute the autoregressive logits, our initial implementation employed a masked matrix multiplication, performed in a single step using the `einsum` operator. While correct, and more efficient than naive loops, calculating the full interaction matrix is computationally inefficient because the upper-triangular entries are all masked to zero. To address this, we devised a more efficient formulation that exploits the block-sparse structure of the coupling matrix. Specifically, we collect all lower-triangular index pairs $(i, j)$ with $j<i$, extract the corresponding coupling blocks $J[i, j]$, and accumulate their contributions through an `einsum` operation. The resulting implementation only computes terms required by the autoregressive factorization, removing unnecessary computation.
 
 ```Python
 def compute_ar_logits(self, X_oh: torch.Tensor):
@@ -492,12 +489,22 @@ With this formulation, the computational complexity scales with the number of lo
 Throughout the model, an explicit binary mask `J_mask` is maintained that encodes the lower-triangular structure, to ensure consistency in the autoregressive aspect. After each optimization step, unused entries of $J$ are clamped to zero.
 
 *Training details* \
-The model is initialized with the local bias of the first position, $h[0]$, being defined from the empirical frequencies. The rest of the parameters are drawn from small random distributions, an exploration will be done on initial conditions in the following section.
-Training also incorporates sequence reweighting to correct for redundancy in MSAs. The weights for each sequence are computed at the start, with parameter `theta` controlling the sequence similarity threshold.
-The model is set up to be optimized with both L-BFGS, suited for energy-based models, as well as AdamW, offering a more scalable and robust option for large datasets. Regularization is applied separately to the field and coulings via $ell_2$-norm penalties with hyperparameters $lambda_h$ and $lambda_J$.
+The model is initialized with the local bias of the first position, $h[0]$, estimated from the empirical symbol frequencies observed at site 0. The rest of the parameters are drawn from small random distributions. Training incorporates sequence reweighting to correct for redundancy in MSAs. The weights for each sequence are computed at the start, with parameter `theta` controlling the sequence similarity threshold, and the effective sample size is defined as in @M_eff. The model can be optimized with either L-BFGS, suited for energy-based models, or AdamW, offering a more scalable and robust option for large datasets. Regularization is applied separately to the field and couplings via $ell_2$-norm penalties with hyperparameters $lambda_h$ and $lambda_J$.
 
 *Evaluation* \
-For evaluation, the model reports the negative log-likelihood (NLL), perplexity, and the effective sample size, to make the results more easily comparable across different datasets. Finally, an ancestral sampling procedure is provided, which generates new sequences position by position using the learned conditional distributions. This procedure is inherently slower than parallel inference, but it guarantees that samples are consistent with the autoregressive structure.
+For evaluation, the model reports the negative log-likelihood (NLL) per position,
+$
+  "nll"_(m,i) = -w_m log p_theta (X_(m,i)|X_(m,<i))
+$
+with the average NLL per position 
+$
+  overline("NLL") = 1 / (M L) sum_(m=1)^M sum_(i=1)^L "nll"_(m,i).
+$
+Another metric used for evaluation is the perplexity, 
+$
+  "Perplexity" = exp(overline("NLL")).
+$
+It is widely used in Natural Language Processing and represents the average number of equally likely choices the model is making per residue. Lower perplexity means the model is more confident and better fits the data. The effective sample size is also reported, to make the results more easily comparable across different datasets. Finally, an ancestral sampling procedure is provided, which generates new sequences position by position using the learned conditional distributions. This procedure is inherently slower than parallel inference, but it guarantees that samples are consistent with the autoregressive structure.
 
 
 == Experiments
@@ -561,24 +568,28 @@ Different protein families were analyzed and explored in the evaluation of the m
   )
 ]]
 
-=== Evaluation Metrics
-
-
 
 = Results and Discussion
 
 == Training Behavior
-ArDCA benefits from exact gradients, meaning the loss curves are smooth and the convergence is direct. In all of the trials, there was minimal overfitting, the validation loss decreased just as the training loss did.
+During training of the  model, we implemented an optimization loop with AdamW optimize. The model parameters were initialized on the training set and updated iteratively by computing exact gradients of the negative log-likelihood (NLL). A validation fraction ($0.1$) of the data was held out, and both training and validation losses were tracked throughout training. To prevent overfitting, early stopping was employed with a patience of 20 evaluation intervals, halting training when no further improvement in validation loss was observed. The training process produced smooth convergence curves, reflecting the stability of the exact gradient computations in ArDCA. As illustrated in Figure @nll, the training NLL decreased steadily over 200 epochs across all tested versions of the model, from an initial value above 160 to below 80. Importantly, the validation loss exhibited the same monotonic decrease as the training loss, indicating minimal overfitting and robust generalization. The observed behavior demonstrates that ArDCA benefits from direct gradient-based optimization, yielding stable convergence and consistent performance across different runs.
+
+#figure( 
+ image("image.png"),
+ caption: [Training NLL Plotted for `max_gap_fraction` experiment]
+) <nll>
+
 
 == Generative Model Quality
 The final test for the models is their ability to generate accurate sequences. For this we can use AlphaFold's plDDT @AlphaFold_pLDDT, 
+https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb
 
 
 == Limitations and Insights
-The Python implementation, with its lower-triangular masked multiplication is efficient for Python standards, but due to Julia's improved the memory management and computation power, still doesn't compare.
+The Python implementation, while optimized through a lower-triangular masked multiplication, remains less efficient than the original Julia version due to the differences in performance between the languages. Beyond implementation, the architecture itself presents inherent limitations. It is restricted to fixed length sequences, limiting its flexibility in modeling families with variable domain lengths. Moreover, its performance is strongly tied to the quality of the multiple sequence alignment. Since the model learns from patterns of co-variation in the alignment, families with limited diversity or strong phylogenetic bias may provide insufficient or misleading signals. In such cases, the model risks poor generalization, generating sequences that fail to capture the true structural and functional constraints of the protein family.
 
 = Conclusion
-In this work, I reimplemented the autoregressive DCA model in Python and demonstrated its viability as a practical tool for protein sequence analysis. The PyTorch-based implementation introduced an efficient block-sparse formulation for computing autoregressive logits, reducing the computational cost and memory usage. Empirical validation across several protein families confirmed the correctness and robustness of the model, with smooth training dynamics and consistent improvements in negative log-likelihood, perplexity, and structural plausibility as measured by pLDDT. Additional experiments on gap filtering highlighted the importance of sequence quality control, while tests on larger Pfam families showed that the method remains tractable at scale. In the future, this work could benefit from GPU acceleration, to improve its speed, but also allow it to more easily work with large datasets. In addition, 
+In this work, I reimplemented the autoregressive DCA model in Python and demonstrated its viability as a practical tool for protein sequence analysis. The PyTorch-based implementation introduced an efficient block-sparse formulation for computing autoregressive logits, reducing the computational cost and memory usage. Empirical validation across several protein families confirmed the correctness and robustness of the model, with smooth training dynamics and consistent improvements in negative log-likelihood, perplexity, and structural plausibility as measured by pLDDT. Additional experiments on gap filtering highlighted the importance of sequence quality control, while tests on larger Pfam families showed that the method remains tractable at scale. In the future, this work could benefit from GPU acceleration, to improve its speed, but also allow it to more easily work with large datasets. Overall, this demonstrates that ArDCA can be adapted beyond its Julia origin and remain a powerful protein-generating model, allowing for downstream tasks like contact prediction or structural modeling.
 
 #pagebreak()
 #bibliography("references.bib")
