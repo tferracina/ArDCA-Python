@@ -26,7 +26,7 @@ class ModelParams:
 
 @dataclass
 class TrainState:
-    fasta_file: str
+    file_path: str
     save_dir: str
     pf: str
     version: int

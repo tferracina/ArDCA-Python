@@ -74,7 +74,7 @@ class ArDCA(nn.Module):
         gold_logp = logp[batch_idx[:, None], pos_idx[None, :], X_idx]  # (M,L)
 
         # 3. weighted negative log likelihood
-        data_nll = -(W[:, None] * gold_logp).sum()
+        data_nll = -(W[:, None] * gold_logp).sum() / W.sum()
 
         # 4. regularization
         regJ = (self.J.pow(2) * self.J_mask).sum()
@@ -286,23 +286,10 @@ def train_ardca(model: ArDCA,
 def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], MSAData, float]:
     """
     Complete training pipeline for ArDCA.
-    
-    Args:
-        fasta_file: Path to MSA FASTA file
-        lambda_h: L2 regularization for fields
-        lambda_J: L2 regularization for couplings  
-        max_gap_fraction: Max fraction of gaps per sequence
-        max_col_gap_fraction: Max fraction of gaps per column
-        identity_thresh: Sequence identity threshold for reweighting
-        val_frac: Fraction of data for validation
-        max_iters: Maximum training iterations
-        seed: Random seed
-        device: 'cuda' or 'cpu'
-    
     Returns:
         (trained_model, training_history, msa_data)
     """
-    fasta_file = config.fasta_file
+    file_path = config.file_path
     save_dir = config.save_dir
     pf = config.pf
     version = config.version
@@ -318,8 +305,8 @@ def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], 
     device = config.device
 
     print("Loading MSA data...")
-    X_idx = read_alignment(
-        fasta_file, 
+    X_idx = read_fasta_alignment(
+        file_path, 
         max_gap_fraction=max_gap_fraction,
         max_col_gap_fraction=max_col_gap_fraction,
     )
