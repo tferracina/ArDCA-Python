@@ -396,13 +396,27 @@ In short, pruning and decimation prevent overfitting by removing parameters that
 
 
 == Autoregressive Network DCA
-ArDCA was built to explore the ability of generative models for protein design coming from sequence-data. It was not the first generative model, DeepSequence, ... ArDCA emerges as a capable model for the extraction of structural and functional protein information which encoded in rapidly growing protein databases.
+Building on the pseudolikelihood maximization of plmDCA, and Boltzmann-machine parametrization of bmDCA, arDCA was introduced as a faster and more efficient alternative. While plmDCA is limited in scope and bmDCA suffers from slow MCMC sampling, reformulating the problem as an autoregressive network provides some key improvements. The key idea is to decompose the joint sequence probability distribution its conditionals, thereby turning it into a supervised learning task. In this way, arDCA emerges as a powerful model for extracting structural and functional information from the rapidly growing protein databases.
 
 === Method
-In arDCA, the exponential-family MaxEnt distribution is replaced with a conditional probability model, where each residue is predicted from the previous ones. This arises from the chain rule decomposition of the joint probability distributions:
+In arDCA, the exponential-family MaxEnt distribution underlying previous DCA methods is factorized into conditional probabilities, predicting each residue from its predecessors. This follows directly from the chain rule of probability:
 $
   P(bold(sigma)) = product_(i=1)^L P(sigma_i|sigma_1,...,sigma_(i-1))
 $
+Inspired by approaches in classical @wu2019solving and quantum @sharir2020deep statistical mechanics, the conditional distribution is parametrized as:
+$
+  P(a_i | a_(i-1), ..., a_1) = exp(h_i (a_i)+sum_(j=1)^(i-1) J_(i j)(a_i, a_j)) / (sum_a_i exp(h_i (a_i)+sum_(j=1)^(i-1) J_(i j)(a_i, a_j)))
+$<ardca>
+This is a multiclass softmax regression @hastie2009elements, generalizing logistic regression to multiple residue states. The model is deinfed by site-specific fields $h_i (a)$ and directed couplings $J_(i j) (a,b)$, and was therefore termed arDCA. For comparison, the authors also introduced a simpler profile model (independent-site model), which only includes field terms. Its joint probability factorizes across sites,
+$
+P(a_1,...,a_L) = product_(i=1...L)f_i (a_i)
+$.
+making it a useful baseline.
+
+Although arDCA shares the same number of parameters as standard DCA, their interpretation differs. Standard DCA has symmetric couplings, $J_(i j)(a, b) = J_(j i)(b, a)$, whereas @ardca couplings are directed, describing only the influence of site $j$ on $i$ for $j<i$. Thus, only the lower-triangular part of the coupling matrix is populated. Inference in arDCA, as in plmDCA, is performed via pseudo-likelihood maximization@balakrishnan2011learning, which allows exact gradient computation from data--unlike bmDCA, which requires costly MCMC sampling. A key difference is that plmDCA conditions each residue on all others in the sequence, often symmetrizing the resulting couplings to align with Potts models. This symmetrization shifts parameters away from their maximum-likelihood values, reducing the model's generative accuracy. By contrast, arDCA does not require symmetrization, preserving likelihood consistency.
+
+The chain rule decomposition is valid for any site ordering, but once the conditional parametrization of @ardca is introduced, the likelihood becomes order dependent. Optimizing over $L!$ permutations is infeasible in practice, so the original authors proposed entropic ordering as a principled heuristic, sites are ranked from lowest entropy (most conserved position) to the highest entropy (most variable). This choice reflects a natural interpretation: conserved positions provide little additional information if occupied by their dominant residue, whereas deviations must be compensated downstream by more variable sites. By placing these variable positions later in the order, the model can capture compensatory effects in a structured way. Although we do not optimize or reorder sites in our implementation, entropic ordering provides useful context for how positional dependencies can be learned by arDCA. 
+
 *Parameter inference* \
 The inference of the parameters is done through likelihood maximization. Following a Bayesian setting with a uniform prior, the optimal parameters are those that maximize the probability of the data #footnote[Here $a$ is used in place of A for sake of space]:
 $
@@ -438,11 +452,13 @@ $
 where $angle.l dot angle.r_cal(M) = 1/M sum_(m=1)^M dot^m$ denotes the empirical average. The first variable, $i=1$, is unconditioned, therefore the coupling equation is $J equiv 0$
 and the equation for the field is the profile model also used in bmDCA, $h_1(a) = log f_1(a) + "const"$.
 
-Unlike bmDCA, the equations do not enforce exact matching between model marginals and empirical frequencies. The ability to reproduce the frequencies is thus a good proxy for the generative properties of the model, on top of the fitting quality of current parameters. In practice, the parameters are updated using gradient descent on the likelihood. As we are able to take the expectations directly over the MSA, not needed MCMC, the gradients are exact. For regularization, arDCA makes use of $ell_2$ penalties, with different strengths depending on whether the task is generating sequences or just contact prediction. It was noted that small regularization values improved the generative quality while larger were beneficial for contact prediction.
+Unlike bmDCA, the equations do not enforce exact matching between model marginals and empirical frequencies. The ability to reproduce the frequencies is thus a good proxy for the generative properties of the model, on top of the fitting quality of current parameters. In practice, the parameters are updated using gradient descent on the likelihood. These gradients are exact as we can take the expectations directly over the MSA. For regularization, arDCA makes use of $ell_2$ penalties, with different strengths depending on whether the task is generating sequences or just contact prediction. It was noted that small regularization values improved the generative quality while larger were beneficial for contact prediction.
 
 === Key Contributions
 
-Unlike bmDCA, expectations are taken directly over the data rather than approximated by MCMC producing exact gradients that will speed up training. This makes ArDCA a lightweight alternative that performs at a similar, or better, accuracy than previous iterations, but at a substantially lower computational cost (a factor between $10^2$ and $10^3$) @Trinquier2021. In addition, this method allows for the computation of exact sequence probabilities, a process crucial crucial in homology detection.
+arDCA represents a major advance over previous DCA methods by enabling exact gradient computations from the data. This eliminates the need for costly MCMC sampling, leading to training speeds that are two to three orders of magnitude faster while maintaining, or even improving, predictive accuracy@Trinquier2021. The resulting model is therefore lightweight and computationally scalable, making it feasible to apply to large protein families, although DeepSequence prevailed in prediction accuracy of these families.
+
+A second key contribution is that arDCA allows for the exact calculation of sequence probabilities, a task intractable for previous models. In bmDCA, only unnormalized sequence weights could be computed, with the partition function requiring expensive thermodynamic integration. By contrast, each conditional probability in arDCA is normalized locally. This reduces the computational burden from summing over $q^L$ possible sequences to only $L$ sums over q residue states. This efficiency enables direct sequence-level comparisons across models, which is especially valuable for applications such as homology detection, protein family classification, and model-based sequence evaluation.
 
 = Implementation and Exploration
 The original ArDCA model was developed in Julia, a high-performance numerical and scientific computing language. Julia's strengths lie in just-in-time (JIT) compilation, seamless handling of linear algebra, and built-in support for parallelism, making it well-suited for implementing large-scale statistical models. In contrast, the re-implementation was carried out in Python, a widely adopted language for machine learning and data science. While Python itself is generally slower due to its interpreted nature, performance-critical operations are offloaded to highly optimized libraries (e.g., NumPy, SciPy, PyTorch), which use underlying C/C++ or Fortran code.
@@ -488,10 +504,9 @@ With this formulation, the computational complexity scales with the number of lo
 
 Throughout the model, an explicit binary mask `J_mask` is maintained that encodes the lower-triangular structure, to ensure consistency in the autoregressive aspect. After each optimization step, unused entries of $J$ are clamped to zero.
 
-*Training details* \
+*Training and Evaluation details* \
 The model is initialized with the local bias of the first position, $h[0]$, estimated from the empirical symbol frequencies observed at site 0. The rest of the parameters are drawn from small random distributions. Training incorporates sequence reweighting to correct for redundancy in MSAs. The weights for each sequence are computed at the start, with parameter `theta` controlling the sequence similarity threshold, and the effective sample size is defined as in @M_eff. The model can be optimized with either L-BFGS, suited for energy-based models, or AdamW, offering a more scalable and robust option for large datasets. Regularization is applied separately to the field and couplings via $ell_2$-norm penalties with hyperparameters $lambda_h$ and $lambda_J$.
 
-*Evaluation* \
 For evaluation, the model reports the negative log-likelihood (NLL) per position,
 $
   "nll"_(m,i) = -w_m log p_theta (X_(m,i)|X_(m,<i))
@@ -504,7 +519,7 @@ Another metric used for evaluation is the perplexity,
 $
   "Perplexity" = exp(overline("NLL")).
 $
-It is widely used in Natural Language Processing and represents the average number of equally likely choices the model is making per residue. Lower perplexity means the model is more confident and better fits the data. The effective sample size is also reported, to make the results more easily comparable across different datasets. Finally, an ancestral sampling procedure is provided, which generates new sequences position by position using the learned conditional distributions. This procedure is inherently slower than parallel inference, but it guarantees that samples are consistent with the autoregressive structure.
+It is widely used in Natural Language Processing and represents the average number of equally likely choices the model is making per residue@perplexity. Lower perplexity means the model is more confident and better fits the data. The effective sample size is also reported, to make the results more easily comparable across different datasets. Finally, an ancestral sampling procedure is provided, which generates new sequences position by position using the learned conditional distributions. This procedure is inherently slower than parallel inference, but it guarantees that samples are consistent with the autoregressive structure.
 
 
 == Experiments
