@@ -63,8 +63,13 @@ Proteins do not evolve in isolation; they often belong to protein families, grou
 
 The study of evolutionary history and relationships among biological entities is referred to as phylogenetics. Protein families provide the domain for phylogenetic analysis, as examining families provides insight that cannot be obtained from a single sequence@EMBL-EBI_Phylogenetics. From homologous proteins, we can detect important correlated mutations between amino acid positions which represents constraints enforced to maintain protein integrity by evolution. These statistical patterns are crucial for computational approaches as they attempt to learn them to predict three-dimensional structure and understand protein function.
 
+
 == Multiple sequence alignments
 To extract important statistical information from protein families, the homologous sequences need to be organized in a systematic way. This is done through a multiple sequence alignment (MSA), in which three or more sequences are arranged so that homologous sites are placed in the same column @WILTGEN201938. Alignment gaps are introduced throughout the MSA to maximise the positional correspondence of sequences and enable them to have the same fixed length. 
+#figure(
+  image("code/out/MSA.png"),
+  caption: [MSA of first 10 proteins in PF00014, created using `pyMSAviz`@moshi4_pyMSAviz_2024]
+)
 
 Aligning sequences in this manner, patterns of conservation and variation are revealed across the family. Conserved positions, those which are unchanged in multiple sequences, represent sites that are critical for maintaining structure or function, while variable positions indicate sites that can tolerate mutations without disruption to the protein. Beyond conservation, MSAs also capture covariation: pairs of positions that mutate in a correlated way across sequences. These covariation signals reflect couplings, where a mutation at one site requires compensation at another to maintain protein integrity @biom14121531.
 
@@ -456,7 +461,7 @@ Unlike bmDCA, the equations do not enforce exact matching between model marginal
 
 === Key Contributions
 
-arDCA represents a major advance over previous DCA methods by enabling exact gradient computations from the data. This eliminates the need for costly MCMC sampling, leading to training speeds that are two to three orders of magnitude faster while maintaining, or even improving, predictive accuracy@Trinquier2021. The resulting model is therefore lightweight and computationally scalable, making it feasible to apply to large protein families, although DeepSequence prevailed in prediction accuracy of these families.
+arDCA represents a major advance over previous DCA methods by enabling exact gradient computations from the data. This eliminates the need for costly MCMC sampling, leading to training speeds that are two to three orders of magnitude faster while maintaining, or even improving, predictive accuracy@Trinquier2021. The resulting model is therefore lightweight and computationally scalable, making it feasible to apply to large protein families, although DeepSequence@deepsequence prevailed in prediction accuracy of these families.
 
 A second key contribution is that arDCA allows for the exact calculation of sequence probabilities, a task intractable for previous models. In bmDCA, only unnormalized sequence weights could be computed, with the partition function requiring expensive thermodynamic integration. By contrast, each conditional probability in arDCA is normalized locally. This reduces the computational burden from summing over $q^L$ possible sequences to only $L$ sums over q residue states. This efficiency enables direct sequence-level comparisons across models, which is especially valuable for applications such as homology detection, protein family classification, and model-based sequence evaluation.
 
