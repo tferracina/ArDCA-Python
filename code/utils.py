@@ -102,6 +102,74 @@ def compute_weights(X_idx: np.ndarray,
     M_eff = float(W.sum())
     return W, M_eff
 
+def compute_weights_blockwise(
+    X_idx: np.ndarray,
+    theta: float | None,
+    gap_idx: int | None = None,
+    count_gaps_as_match: bool = False,
+    block_size: int = 512,
+) -> Tuple[np.ndarray, float]:
+    """
+    Sequence reweighting with identity threshold theta in [0,1],
+    computed in memory-efficient blockwise manner.
+    
+    Args:
+        X_idx: (M, L) integer MSA index matrix
+        theta: distance threshold
+        gap_idx: symbol used for gaps (or None if no gaps)
+        count_gaps_as_match: whether gap-gap counts as valid & equal
+        block_size: number of sequences per block to process
+    Returns:
+        W: per-sequence weights, shape (M,)
+        M_eff: float effective number of sequences
+    """
+    M, L = X_idx.shape
+    if theta is None or theta <= 0:
+        W = np.ones(M, dtype=np.float64)
+        return W, float(M)
+    
+    similar_counts = np.zeros(M, dtype=np.int64)
+    
+    for i in range(0, M, block_size):
+        i_end = min(i + block_size, M)
+        X_i = X_idx[i:i_end]  # shape (B, L)
+        
+        for j in range(0, M, block_size):
+            j_end = min(j + block_size, M)
+            X_j = X_idx[j:j_end]  # shape (B2, L)
+            
+            # Broadcasted compare: (B, B2, L)
+            eq = (X_i[:, None, :] == X_j[None, :, :])
+            
+            if gap_idx is None:
+                valid = np.ones_like(eq, dtype=bool)
+            else:
+                valid = (X_i[:, None, :] != gap_idx) & (X_j[None, :, :] != gap_idx)
+                if count_gaps_as_match:
+                    gapgap = (X_i[:, None, :] == gap_idx) & (X_j[None, :, :] == gap_idx)
+                    valid |= gapgap
+                    eq = np.where(gapgap, True, eq)
+            
+            matches = (eq & valid).sum(axis=-1)      # (B, B2)
+            denom = valid.sum(axis=-1)               # (B, B2)
+            
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ident = matches / denom
+                ident[denom == 0] = 0.0
+                
+                # Handle diagonal blocks - ensure self-comparison is 1.0
+                if i == j:
+                    diag_size = min(i_end - i, j_end - j)
+                    np.fill_diagonal(ident[:diag_size, :diag_size], 1.0)
+            
+            # Accumulate counts of similar sequences
+            similar_counts[i:i_end] += (ident >= theta).sum(axis=1)
+    
+    W = 1.0 / similar_counts.astype(np.float64)
+    M_eff = float(W.sum())
+    
+    return W, M_eff
+
 def compute_empirical_f1(X_idx: np.ndarray, W: np.ndarray, q: int):
     """
     Compute empirical single-site frequency counts weighted by W
