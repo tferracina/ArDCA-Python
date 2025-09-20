@@ -43,12 +43,11 @@ class ArDCA(nn.Module):
         i_idx, j_idx = torch.tril_indices(L, L, offset=-1)
         J_blocks = self.J[i_idx, j_idx]   # (n_pairs, q, q)
         X_blocks = X_oh[:, j_idx]         # (M, n_pairs, q)
-
-        contrib = torch.einsum("mpq,pqr->mpr", X_blocks, J_blocks)  # (M,n_pairs,q)
+        # flipped from (b, a) to (a, b)
+        contrib = torch.einsum("mpb,pab->mpa", X_blocks, J_blocks)  # (M,n_pairs,q)
         logits = logits.index_add(1, i_idx, contrib)
 
         return logits
-
 
     
     def loss(self, X_oh: torch.Tensor, X_idx: torch.Tensor, W: torch.Tensor, lambda_J: Optional[float] = None,
@@ -104,13 +103,13 @@ class ArDCA(nn.Module):
         self.h_pos[0].copy_(h0)
 
     @torch.no_grad()
-    def init_parameters(self, seqs: torch.Tensor, init_scale: float = 0.01):
+    def init_parameters(self, seqs: torch.Tensor, init_scale: float = 0.1):
         """Initialize parameters with small random values and set h0 from frequencies."""
         # Initialize h0 from data
         self.init_h0_from_freqs(seqs)
         
         # Small random initialization for other positions
-        start_idx = 0
+        start_idx = 1
         self.h_pos[start_idx:].normal_(0, init_scale)
         self.J.normal_(0, init_scale)
         
@@ -217,7 +216,7 @@ def train_ardca(model: ArDCA,
     if use_lbfgs:
         optimizer = torch.optim.LBFGS(
             model.parameters(),
-            lr=1.0,
+            lr=0.1,
             max_iter=20,
             tolerance_grad=1e-7,
             tolerance_change=1e-9,
@@ -255,7 +254,7 @@ def train_ardca(model: ArDCA,
                     lambda_h=model_params.lambda_h
                 )
                 loss.backward()
-                return loss
+                return loss.detach()
             
             # L-BFGS step
             optimizer.step(closure)
@@ -328,7 +327,6 @@ def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], 
     Returns:
         (trained_model, training_history, msa_data)
     """
-    print("new")
     file_path = config.file_path
     save_dir = config.save_dir
     pf = config.pf
@@ -351,7 +349,7 @@ def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], 
         max_col_gap_fraction=max_col_gap_fraction,
     )
 
-    weights, M_eff = compute_weights(X_idx=X_idx, theta=identity_thresh, gap_idx=0)
+    weights, M_eff = compute_weights_blockwise(X_idx=X_idx, theta=identity_thresh, gap_idx=0)
 
     msa_data = MSAData(
         seqs=X_idx,
@@ -401,7 +399,6 @@ def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], 
     val_X_oh = encode_sequence(val_seqs, q=msa_data.q, device=device)
     train_data = (train_X_oh, torch.tensor(train_seqs, dtype=torch.long).to(device), torch.tensor(train_weights, dtype=torch.float32).to(device))
     val_data = (val_X_oh, torch.tensor(val_seqs, dtype=torch.long).to(device), torch.tensor(val_weights, dtype=torch.float32).to(device))
-    
     
     train_metrics = model.evaluate(*train_data)
     val_metrics = model.evaluate(*val_data)

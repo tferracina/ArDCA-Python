@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from Bio import AlignIO
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 import gzip
 from sklearn.decomposition import PCA
 import json
