@@ -147,32 +147,34 @@ class ArDCA(nn.Module):
         return metrics
     
     @torch.no_grad()
-    def sample(self, n_samples: int = 1, device: str = "cpu") -> np.ndarray:
+    def sample_sequences(self, n_samples: int = 1, device: str = "cpu", seed: Optional[int] = None) -> torch.Tensor:
         """
         Generate new sequences from the trained arDCA model.
         Returns: (n_samples, L) numpy array of sampled sequence indices.
         """
+        if seed is not None:
+            torch.manual_seed(seed)
+
         self.eval()
         L, q = self.L, self.q
         samples = torch.zeros((n_samples, L), dtype=torch.long, device=device)
-        X_oh = torch.zeros((n_samples, L, q), dtype=self.J.dtype, device=device)
 
-        for i in range(L):
-            logits = self.h_pos[i].clone()
-            if i > 0:
-                # Add coupling contributions from previous positions
-                for j in range(i):
-                    prev_a = samples[:, j]
-                    J_ij = self.J[i, j]  # shape: (q, q)
-                    # Gather the relevant couplings for each sample
-                    contrib = J_ij[:, prev_a].T  # shape: (n_samples, q)
-                    logits = logits + contrib
-            probs = torch.softmax(logits, dim=-1)  # shape: (n_samples, q)
-            a_i = torch.multinomial(probs, num_samples=1).squeeze(-1)
-            samples[:, i] = a_i
-            X_oh[torch.arange(n_samples), i, a_i] = 1.0
+        with torch.no_grad():
+            for pos in range(L):
+                if pos == 0:
+                    logits = self.h_pos[0].unsqueeze(0).expand(n_samples, -1)
+                else:
+                    partial_oh = torch.zeros((n_samples, L, q), device=device)
+                    for i in range(pos):
+                        partial_oh[torch.arange(n_samples), i, samples[:, i]] = 1.0
 
-        return samples.cpu().numpy()
+                    full_logits = self.compute_ar_logits(partial_oh)  # (num_sequences, L, q)
+                    logits = full_logits[:, pos, :]
+                
+                probs = F.softmax(logits, dim=-1)
+                samples[:, pos] = torch.multinomial(probs, 1).squeeze(-1)
+
+        return samples
 
 
 def train_ardca(model: ArDCA, 
@@ -210,11 +212,21 @@ def train_ardca(model: ArDCA,
     model.init_parameters(train_seqs)
     
     # Optimizer
-    if model_params.optimizer.lower() == "lbfgs":
-        optimizer = torch.optim.LBFGS(model.parameters(), lr=1e-3)
+    use_lbfgs = model_params.optimizer.lower() == "lbfgs"
+
+    if use_lbfgs:
+        optimizer = torch.optim.LBFGS(
+            model.parameters(),
+            lr=1.0,
+            max_iter=20,
+            tolerance_grad=1e-7,
+            tolerance_change=1e-9,
+            history_size=100
+        )
     elif model_params.optimizer.lower() == "adam":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0)
-    else: raise ValueError(f"Selected optimizer not configured: {model_params.optimizer}");
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    else: 
+        raise ValueError(f"Selected optimizer not configured: {model_params.optimizer}")
     
     # Training history
     history = {
@@ -232,17 +244,43 @@ def train_ardca(model: ArDCA,
     
     for epoch in range(model_params.max_iters):
         model.train()
-        optimizer.zero_grad()
+        if use_lbfgs:
+            def closure():
+                optimizer.zero_grad()
+                loss, info = model.loss(
+                    train_X_oh, 
+                    train_seqs,
+                    train_weights,
+                    lambda_J=model_params.lambda_J,
+                    lambda_h=model_params.lambda_h
+                )
+                loss.backward()
+                return loss
             
-        loss, info = model.loss(
-                train_X_oh, 
-                train_seqs,
-                train_weights,
-                lambda_J=model_params.lambda_J,
-                lambda_h=model_params.lambda_h
-        )
-        loss.backward()
-        optimizer.step()
+            # L-BFGS step
+            optimizer.step(closure)
+            
+            # Get loss info for logging (re-compute without gradients)
+            with torch.no_grad():
+                loss, info = model.loss(
+                    train_X_oh, 
+                    train_seqs,
+                    train_weights,
+                    lambda_J=model_params.lambda_J,
+                    lambda_h=model_params.lambda_h
+                )
+        else:
+            optimizer.zero_grad()    
+            loss, info = model.loss(
+                    train_X_oh, 
+                    train_seqs,
+                    train_weights,
+                    lambda_J=model_params.lambda_J,
+                    lambda_h=model_params.lambda_h
+            )
+            loss.backward()
+            optimizer.step()
+        
         model.clamp_unused()
         
         # Record training metrics
@@ -250,7 +288,9 @@ def train_ardca(model: ArDCA,
         history['train_nll'].append(info['nll'].item())
         
         # Validation
-        if epoch % eval_interval == 0:
+        if epoch % eval_interval == 0 or epoch == model_params.max_iters - 1:
+            print(f"Epoch {epoch}: Train Loss={loss.item():.6f}, Train NLL={info['nll'].item():.6f}")
+            
             if val_seqs is not None:
                 model.eval()
                 with torch.no_grad():
@@ -266,6 +306,7 @@ def train_ardca(model: ArDCA,
                 history['val_loss'].append(val_loss.item())
                 history['val_nll'].append(val_info['nll'].item())
                 history['val_perplexity'].append(val_metrics['perplexity'])
+                print(f"         Val Loss={val_loss.item():.6f}, Val NLL={val_info['nll'].item():.6f}, Perplexity={val_metrics['perplexity']:.4f}")
                 
                 # Early stopping
                 if val_loss.item() < best_val_loss - 1e-6:
@@ -277,8 +318,6 @@ def train_ardca(model: ArDCA,
                 if patience_counter >= patience:
                     print(f"Early stopping at epoch {epoch}")
                     break
-            else:
-                print(f"Epoch {epoch}: Train Loss={history['train_loss'][-1]:.4f}")
 
     return model, history
 
@@ -289,6 +328,7 @@ def main_training_pipeline(config: TrainState) -> Tuple[ArDCA, Dict[str, list], 
     Returns:
         (trained_model, training_history, msa_data)
     """
+    print("new")
     file_path = config.file_path
     save_dir = config.save_dir
     pf = config.pf
