@@ -43,26 +43,28 @@
 #pagebreak()
 = Introduction
 
-Proteins are biomolecules that are fundamental to nearly all biological processes. Their diverse roles include transporting nutrients, catalyzing chemical reactions, providing structural support, and more. The function of a protein is determined by the composition of its primary sequence created from amino acids. A single protein sequence can vary greatly in length and order of its amino acids, leading to a very large number of possible configurations. 
+Proteins are biomolecules that are fundamental to nearly all biological processes. Their diverse roles include transporting nutrients, catalyzing chemical reactions, providing structural support, and more. The function of a protein is determined by the composition of its primary sequence created from amino acids. A single protein sequence can vary greatly in length and order of its amino acids, leading to a very large number of possible configurations. The massive size of the protein sequence space makes exhaustive experimental exploration infeasible. 
 
-The size of the protein sequence space makes exhaustive experimental exploration infeasible. However, the rapid growth of biological databases, driven by advances in sequencing technologies, has transformed biology into a data-rich discipline. Large repositories such as UniProt, Pfam, and the Protein Data Bank store millions of sequences and structures, providing crucial resources for computational approaches@weigt2020.
+Advances in sequencing technologies has ushered in a rapid growth of biological databases, transforming biology into a data-rich discipline. Large repositories such as UniProt, Pfam, and the Protein Data Bank store millions of sequences and structures, providing crucial resources for computational approaches@weigt2020. This wealth of data has enabled the development of advanced statistical and machine learning models capable of simulating protein sequence evolution, predicting structural conformations, and generating novel sequences with desired properties. In addition, breakthroughs in protein structure prediction--most notably the Nobel Prize winning AlphaFold@alphafold\-- show that computational methods can rival experimental accuracy, in a much cheaper manner.
 
-This wealth of data has enabled the development of advanced statistical and machine learning models capable of simulating protein sequence evolution, prediciting structural conformations, and generating novel sequences with desired properties. In addition, breakthroughs in protein structure prediction--most notably the Nobel Prize winning AlphaFold@alphafold\-- show that computational methods can rival experimental accuracy, in a much cheaper manner.
-
-In this work, we will implement an efficient autoregressive network for protein sequence generation leveraging the Direct Coupling Analysis (DCA) in Python. In Section 2, the biological background will be laid out. Section 3 will introduce the mathematical foundations. Section 4 will detail previous iterations of similar models, while Section 5 will explore our implementation.
+In this work, we will implement arDCA, an efficient autoregressive network for protein sequence generation leveraging the Direct Coupling Analysis (DCA) method in Python. The biological background will be introduced in  Section 2. The mathematical foundations will be laid out in Section 3. Section 4 will describe previous iterations of Direct Coupling Analysis methods and arDCA, while Section 5 will explore our implementation.
 
 = Biological Background
 
 == Proteins and their structure 
-Proteins are essential biological molecules responsible for a wide range of functions in living organisms. Despite their functional diversity, all proteins are polymers of the same set of standard building blocks: the 20 canonical amino acids arranged in different assortments. Amino acids share a common core structure consisting of a central carbon atom bonded to a hydrogen atom, an amino group, a carboxyl group, and a variable side chain. This side chain is the defining feature of each amino acid, giving rise to differences in size, shape, chemical reactivity, and polarity. Proteins are formed by peptide bonds of distinct amino acids, where the term polypeptides comes from. In this process, certain atoms are lost, thus, within a protein sequence, individual amino acids are typically referred to as residues. Generally, protein sequences are made up of between 50 and 2000 amino acids. The ordering of the amino acids dictates how a protein folds into its three-dimensional structure, known as its conformation. Although each conformation is unique, two common folding patterns occur in many proteins: the $alpha$ helix and the $beta$ sheet @alberts2002. 
+Proteins are essential biological molecules responsible for a wide range of functions in living organisms. Despite their functional diversity, all proteins are polymers of the same set of standard building blocks: the 20 canonical amino acids. Amino acids share a common core structure consisting of a central carbon atom bonded to a hydrogen atom, an amino group, a carboxyl group, and a variable side chain. The side chain is the defining feature of an amino acid, giving rise to differences in size, shape, chemical reactivity, and polarity. Proteins, or polypeptides, are formed through peptide bonds of distinct amino acids. Certain atoms are lost in this process, thus within a protein sequence, individual amino acids are typically referred to as residues. Generally, protein sequences are made up of between 50 and 2000 amino acids. The ordering of the amino acids dictates how a protein folds into its three-dimensional structure, known as its conformation. Although each conformation is unique, two common folding patterns occur in many proteins: the $alpha$ helix and the $beta$ sheet @alberts2002. 
+
+#figure(
+  image("code/out/PF13354protein.png", width: 40%),
+  caption: [Protein from PF13354 folded using `ColabFold`@Mirdita2022_ColabFold]
+)
 
 Each amino acid is chemically distinct and can occur at any position in a protein chain, giving rise to $20^n$ possible polypeptide sequences of length $n$. For a typical protein of 300 amino acids, the number of possible sequences is astronomically large ($approx 2 dot 10^390$). However, only a small fraction of these sequences are capable of folding into a stable three-dimensional conformation. 
 
 == Protein families and evolutionary information
-Proteins do not evolve in isolation; they often belong to protein families, groups of proteins that share a common evolutionary origin, therefore exhibit similar sequence features and functional properties @ebi_protein_families. Over evolutionary timescales, mutations accumulate in these families: some are beneficial, altering the protein activity in ways that give rise to new functions, while many others are neutral and have no effect on stability or activity. Harmful mutations, by contrast, disrupt protein folding or its function. These changes are  eliminated through natural selection. The result is a collection of homologous proteins that retain overall structural and functional characteristics, but also display sequence variability that encodes the evolutionary history of the family @alberts2002. 
+Proteins do not evolve in isolation; they often belong to protein families, groups of proteins that share a common evolutionary origin, therefore exhibit similar sequence features and functional properties @ebi_protein_families. Over evolutionary timescales, mutations accumulate in these families: some are beneficial, altering the protein activity in ways that give rise to new functions, while many others are neutral and have no effect on stability or activity. Harmful mutations, by contrast, disrupt protein folding or its function. These destructive changes are eliminated through natural selection. The result is a collection of homologous proteins that retain overall structural and functional characteristics, but also display sequence variability that encodes the evolutionary history of the family @alberts2002. 
 
-The study of evolutionary history and relationships among biological entities is referred to as phylogenetics. Protein families provide the domain for phylogenetic analysis, as examining families provides insight that cannot be obtained from a single sequence@EMBL-EBI_Phylogenetics. From homologous proteins, we can detect important correlated mutations between amino acid positions which represents constraints enforced to maintain protein integrity by evolution. These statistical patterns are crucial for computational approaches as they attempt to learn them to predict three-dimensional structure and understand protein function.
-
+The study of evolutionary history and relationships among biological entities is referred to as phylogenetics. Protein families provide the domain for phylogenetic analysis, as examining families provides insight that cannot be obtained from a single sequence@EMBL-EBI_Phylogenetics. From homologous proteins, we can detect important correlated mutations between amino acid positions which represents constraints enforced to maintain protein integrity by evolution. These statistical patterns are crucial for computational approaches which learn them to predict three-dimensional structure and understand protein function.
 
 == Multiple sequence alignments
 To extract important statistical information from protein families, the homologous sequences need to be organized in a systematic way. This is done through a multiple sequence alignment (MSA), in which three or more sequences are arranged so that homologous sites are placed in the same column @WILTGEN201938. Alignment gaps are introduced throughout the MSA to maximise the positional correspondence of sequences and enable them to have the same fixed length. 
@@ -75,13 +77,11 @@ Aligning sequences in this manner, patterns of conservation and variation are re
 
 
 == Protein contacts
-One of the earliest challenges for researchers in computational biology--historically encouraged by the CASP (Critical Assessment of Structure Prediction) competition--has been to understand how the linear sequence of amino acids folds into its conformation. Researchers explored spatially close pairs of residues in a protein's folded three-dimensional structure, called contacts. As the structures can be represented in Cartesian coordinates $(x,y,z)$,  contacts are defined using distance thresholds. Two residues are generally considered to be in contact if the distance between the selected atoms is below a set threshold, usually 8 Ångströms (Å). 
-
-Residues that are far apart in the linear sequence, may be close together in the 3D structure. The contact distances are further categorized into short, medium, and long range predictions. Most computational approaches evaluate the long range contacts separately, as they are the most important for accurate predictions and unsurprisingly, the hardest to predict @adhikari2016. 
+One of the earliest challenges for researchers in computational biology--historically encouraged by the CASP (Critical Assessment of Structure Prediction) @PredictionCenter competition--was understanding how the linear sequence of amino acids folds into its conformation. A key insight was the role of contacts, pairs of residues that, while possibly far apart in the linear sequence, end up spatially close in the folded three-dimensional structure. Since structures can be represented in Cartesian coordinates $(x,y,z)$, contacts are usually defined by distance thresholds, with two residues considered in contact if the distance between the selected atoms is below a set threshold, usually 8 Ångströms (Å). These contacts are further categorized into short, medium, and long range, with long-range contacts playing a disproportionately important role in determinig the fold. Importantly, this illustrates that correlations in protein sequences are not limited to neighboring sites along the chain, many of the most informative dependencies span large separations @adhikari2016. 
 
 == The problem of inference
 
-A central challenge in protein sequence analysis is disentangling the true structural and functional constraints of protein families from spurious correlations introduced by other factors. Correlations can arise indirectly, for example, if residue A correlates with B, and B with C, then A and C may appear correlated without a direct interaction. Moreover, shared evolutionary history (phylogeny) and biases in sequence databases can further obscure the true couplings that underlie protein folding and function @dietler2023.
+The central challenge in protein sequence analysis is disentangling the true structural and functional constraints of protein families from spurious correlations introduced by other factors. Correlations can arise indirectly, for example, if residue A correlates with B, and B with C, then A and C may appear correlated without a direct interaction. Moreover, shared evolutionary history (phylogeny) and biases in sequence databases can further obscure the true couplings that underlie protein folding and function @dietler2023. Addressing this problem requires a mathematical framework capable of distinguishing direct from indirect correlations in the data.
 
 = Mathematical Foundations
 
@@ -103,16 +103,15 @@ $
 The empirical frequencies will serve as constraints for the distribution we want to infer.
 
 == Maximum Entropy Principle
-To find the probability distribution $P(bold(sigma))$ that will satisfy constraints, in other words reproduce the empirical marginals $f_i (A)$ and $f_(i j) (A, B)$, we can use the maximum entropy principle@Jaynes1957a @Jaynes1957b. The first step to set up the MEP is extracting information from the system. Usually, this information is given in the form of averages of functions $angle.l f_k (x) angle.r$. For example, in a physical system, one could compute average magnetization or energy of the observed system. We also need to define a probability of occupancy of states, $p(x)$, which runs over all the possible states. This distribution has the usual property of mapping each state to a value within 0 and 1 and adding up to 1 when considering all states @MITinfent. Our uncertainty on the system is expressed quantitatively through Shannon entropy $S$@Shannon1948:
+To find the probability distribution $P(bold(sigma))$ that will satisfy constraints, in other words reproduce the empirical marginals $f_i (A)$ and $f_(i j) (A, B)$, we can use the maximum entropy principle@Jaynes1957a @Jaynes1957b. The first step to set up the MEP is extracting information from the system. Usually, this information is given in the form of averages of functions $angle.l f_k (x) angle.r$. For example, in a physical system, one could compute average magnetization or energy of the observed system. We also need to define a probability of occupancy of states, $p(x)$, which runs over all the possible states. This distribution satisfies the standard properties of a probability distribution: for all states $x$, $0<=p(x)<=1$, and the distribution is normalized, $sum_x p(x) =1$ @MITinfent. Our uncertainty on the system is expressed quantitatively through Shannon entropy $S$@Shannon1948:
 $
   S = - sum_x p(x) ln p(x) 
 $ <entropy>
-Generally, the distribution which maximizes entropy is the uniform distribution. However, since constraints affect the probabilities of states, the uniform is not suitable. The constraints on our system are:
+In general, the distribution that maximizes entropy under no constraints is the uniform distribution. However, once constraints are imposed, the uniform is no longer suitable. Our system is constrained by the probability distribution's normalization condition and the expectation constraints:
 $
-  sum_x p(x) = 1, quad "and" quad sum_x p(x) f_k (x) = angle.l f_k angle.r quad (k = 1, ..., m).
+  sum_x p(x) = 1, quad "and" quad sum_x p(x) f_k (x) = angle.l f_k angle.r quad (k = 1, ..., m),
 $ <constraints>
-
-Selecting Shannon entropy as our measure of information, we can introduce Lagrange Multipliers $lambda_0, lambda_1, ... lambda_m$ to maximize @entropy subject to the constraints @constraints, yielding:
+where each $f_k (x)$ represents a feature, and $angle.l f_k (x) angle.r$ its empirical average. By selecting Shannon entropy as our measure of information, we can introduce Lagrange Multipliers $lambda_0, lambda_1, ... lambda_m$ to maximize @entropy subject to the constraints defined in @constraints, yielding:
 $
   p(x) = exp(-lambda_0 - sum_(k=1)^m lambda_k f_k (x)).
 $
@@ -125,11 +124,11 @@ $
   angle.l f_k angle.r = - partial / (partial lambda_k) ln Z(lambda)
 $
 
-The entropy of the distribution  then reduces to#footnote[The full derivation can be found in @app1.]:
+The maximum entropy of the distribution  then reduces to#footnote[The full derivation can be found in @app1.]:
 $
   S_max = lambda_0 + sum_(k=1)^m lambda_k angle.l f_k angle.r
 $
-The maximum-entropy (MaxEnt) distribution for this system is exactly the Potts model.
+When the constraints are chosen to match the empirical single-site and pairwise frequencies of the MSA, the maximum-entropy (MaxEnt) distribution reduces to the Potts model.
 
 == Connection to statistical mechanics
 The Potts model is rooted in statistical mechanics, where it was introduced as a generalization of the Ising spin model. Both models were developed to study ferromagnetism and phase transitions.
@@ -137,15 +136,13 @@ The Potts model is rooted in statistical mechanics, where it was introduced as a
 === Ising Model
 The Ising model @ising1925 describes a system of spins $sigma_i$ arranged on a lattice. Each spin can take one of two possible values:
 $
-  sigma_i in {+1, -1}
+  sigma_i in {+1, -1}.
 $
-The Hamiltonian function, which represents the energy, of a spin configuration ${sigma_i}$ is 
+The Hamiltonian function, which represents the energy, of a spin configuration ${sigma}$ is 
 $
   H_("Ising")({sigma}) = -J sum_(angle.l i, j angle.r) sigma_i sigma_j - h sum_i sigma_i,
 $
-where $J$ is the coupling constant calculated over nearest-neighbor pairs (represented by $angle.l i, j angle.r$) that defines the strength between paired interactions. The $h$ term is the external magnetic field acting on the spins.
-
-At thermal equilibrium, the probability of a configuration is given by the Boltzmann distribution:
+where $J$ is the coupling constant calculated over nearest-neighbor pairs (represented by $angle.l i, j angle.r$) that defines the strength between paired interactions. The $h$ term is the external magnetic field acting on the spins. At thermal equilibrium, the probability of a configuration is given by the Boltzmann distribution:
 $
   P({sigma}) = 1 / Z exp(-beta H_"Ising" ({sigma})),
 $
@@ -155,20 +152,20 @@ $
 $
 
 === Potts Model
-The Potts model @potts1952 generalizes the Ising model by allowing each spin to take on $q$ possible states. The $q$-state Potts model states take values in ${1, 2, ... q}$. The Hamiltonian is written as
+The Potts model @potts1952 generalizes the Ising model by allowing each spin to take on $q$ possible states. Its Hamiltonian is 
 $
   H_("Potts") ({sigma}) = -J sum_(angle.l i, j angle.r) delta(sigma_i, sigma_j).
 $
-$J$ again represents the ferromagnetic coupling that encourages neighboring spins to align in the same state. The original Potts was defined without the local fields, but they can be added if needed. The partition function becomes
+where $J$ is the ferromagnetic coupling that encourages neighboring spins to align in the same state. While the original formulation did not include external fields, they can be incorporated into the Hamiltonian to allow for site-dependent biases. The corresponding partition function is
 $
   Z = sum_({sigma}) exp(-beta H_"Potts" ({sigma})).
 $
-The Potts model simplifies to an Ising model when $q=2$. Putting this together, the probability distribution from the Potts model is written as:
+For $q=2$, the Potts model reduces to the Ising model. The probability distribution over spin configurations is then given by
 $
-  P(bold(sigma)) = 1 / Z exp(-beta H_"Potts" ({sigma})).
+  P(sigma) = 1 / Z exp(-beta H_"Potts" ({sigma})).
 $
 
-It is important to note--anticipating further exploration--that the Potts model is over-parametrized: many different $(h, J)$ sets define exactly the same distribution. Without a gauge choice, the parameters will not be uniquely identifiable and the norms of $J$ can be misleading, hindering the process of optimization. Some common gauges, which will be explored in detail further, are reference states, zero-sum, and defining it implicitly via regularization.
+It is important to note that the Potts model is over-parametrized: multiple choices of $(h, J)$ yield the same probability distribution. As a resul, the parameters are not uniquely identifiable without fixing a gauge. This ambiguity can make the norms of $J$ misleading and complicate optimization. Several gauge conventions are commonly used--such as the reference-state gauge, the zero-sum gauge, or implicit definitions through regularization--which will be discussed in detail in the following sections. In the context of protein sequence analysis, the Potts model 
 
 == Direct Coupling Analysis
 The statistical dependencies observed in MSAs encode important information about protein structure and function. However, naive measures such as covariance cannot distinguish between direct correlations, which arise from true physical or functional contacts, and indirect correlations, propagated via other residues. Direct Coupling Analysis (DCA) addresses this problem by introducing a method to separate direct correlations.
@@ -185,11 +182,11 @@ where $h_i$ are site-specific fields and $J_(i j)$ are coupling parameters betwe
 The mean-field Direct Coupling Analysis (mfDCA) algorithm, introduced by Morcos et al. @mfDCA, provided the first computationally feasible approximation of the Potts model. The idea is to approximate a small-coupling expansion, valid when correlations between sites are weak which reduces the inference problem to the inversion of a correlation matrix.
 
 === Method
-To begin, the raw frequency counts suffer from sampling bias, so the weight of highly similar sequences is reduced. Each sequence $sigma^((a))$ is assigned a weight
+To begin, raw frequency counts in an MSA are affected by sampling bias, since closely related sequences contribute redundant information. To mitigate this, a sequence reweighting procedure is applied. Each sequence $sigma^((a))$ is assigned a weight
 $
   w_m = 1 / lr(|{b in{1, ..., M}:"sim"(sigma^((a)),sigma^((b))) >= x}|),
 $ <weight>
-where M is the number of sequences in the MSA and sim is their similarity #footnote[The original paper used "seqid" to represent percentage identity. We chose "sim" as the future methods adopted this notation.]. The $x$ represents the sequence identity threshold, which was empirically found to be best at $x=0.8$. The effective weight of a sequence $m$ is $w_m$, and the total effective number of sequences is
+where M is the number of sequences in the MSA, and $"sim"(dot,dot)$ denotes the pairwise sequence similarity #footnote[The original paper used "seqid" for percentage identity. We adopt the notation "sim" as the future methods used this notation.]. Intuitively, if a sequence is similar to many others, with a similarity greater than the threshold $x$, its contribution is down-weighted; if it is unique, it retains full weight. Through empirical tests $x=0.8$ was found to be most effective. The weight of a sequence $m$ is $w_m$, and the effective number of  sequences is
 $
   M_("eff") = sum_(m=1)^M w_m.
 $ <M_eff>
@@ -198,50 +195,49 @@ $
   f_i (A) &= 1 / (M_("eff") + lambda) (lambda / q + sum_(m=1)^M w_m delta(A, sigma_i^((m)))) \
   f_(i j)(A, B) &= 1 / (M_("eff") + lambda) (lambda / q^2 + sum_(m=1)^M w_m delta(A, sigma_i^((m))) delta(B, sigma_j^((m))))
 $
-where $q=21$ is the amino acid alphabet with the gap symbol, and $lambda$ is a pseudocount parameter used for regularization. The gauge choice employed in mfDCA is defining a reference state to remove redundancy among parameters and ensure identifiability, while preserving all physically relevant couplings. Typically, it is set as the last amino acid $A=q$. This gives us
+where $q=21$ is the amino acid alphabet with the gap symbol, and $lambda$ is a pseudocount parameter used for regularization. To address the overparametrization of the Potts, mfDCA employs a reference-state gauge, which removes redundancy among parameters while preserving all physically relevant couplings. Typically, it is set as the last amino acid $A=q$. Implementing this gauge gives us
 $
   forall i,j: J_(i j)(a, q) = J_(i j)(q, a) = h_i (q) = 0
 $
-*Finding the Couplings* \
-To circumvent the intractable $Z$ computation, mfDCA assumes weak correlations between sites, expanding the exponential in @potts by the Taylor series to first order@plefka1982 @georges1991. This results in the relation
+*Coupling Inference: Mean-field Approximation* \
+To circumvent the intractable computation of the partition function $Z$, mfDCA assumes that the correlations between sites are weak. Under this approximation, the exponential of the Potts defined in @potts can be expanded to first order in a Taylor series @plefka1982 @georges1991. This yields a relation between the couplings and the connected correlation matrix:
 $
   C_(i j)(A,B)=f_(i j) (A,B) - f_i (A)f_j (B).
 $ <corr>
-between the couplings and the connected correlation matrix. The couplings are then approximated as through naive mean-field inversion
+In this framework, the couplings can be approximated through a naive mean-field inversion,
 $
   e_(i j) (A, B) = - (C^(-1))_(i j)(A,B),
 $
-where $C$ is treated as a $((q-1)L) times ((q-1)L)$ matrix, and the pair $(i, A)$ is regarded as a single index. The full derivation can be found in @app2. In practice, the correlation matrix is often singular without regularization. mfDCA opts to use a strong pseudocount ($lambda approx M_"eff"$) to stabilize the inversion and prevent spurious large couplings. 
+where $C$ is treated as a $((q-1)L) times ((q-1)L)$ matrix, and the pair $(i, A)$ is regarded as a single index #footnote[A detailed derivation is provided in @app2]. In practice, however, the correlation matrix is often singular or ill-conditioned, making the inversion unstable. To address this, mfDCA opts to use a strong pseudocount ($lambda approx M_"eff"$) ensuring numerical stability and preventing spurious large couplings. 
 
-*Pair Scoring* \
-Once the estimate of the pair couplings $e_(i j) (A,B)$ is inferred, we need a way to rank residue pairs by their interaction strength. The $(q-1) times (q-1)$-dimensional coupling matrices need to map to a single scalar parameter. We can do this through the direct information (DI) @weigt2009. To begin, for each pair $(i, j)$ a two-site model is constructed:
+*Pair Scoring: Direct Information* \
+Once the pairwise couplings $e_(i j) (A,B)$ are inferred, residue pairs must be ranked by their interaction strength. The $(q-1) times (q-1)$-dimensional coupling matrices need to be mapped to a single scalar parameter. A natural starting point is mutual information (MI), which measures statistical dependence between two MSA columns. However, MI is not able to disentangle direct correlations. Therefore a new measure, direct information (DI) @weigt2009 was introduced. To begin, for each pair $(i, j)$ a two-site model is constructed:
 $
   P_(i j)^"(dir)" (A,B) = 1 / Z_(i j) exp( e_(i j) (A,B) + tilde(h)_i (A) + tilde(h)_j (B)),
 $
-with auxiliary fields $tilde(h)_i, tilde(h)_j$ chosen such that
+with auxiliary fields $tilde(h)_i, tilde(h)_j$ chosen such that the single-site marginals are preserved:
 $
   sum_(B=1)^q P_(i j)^"(dir)" (A,B) = f_i (A), quad sum_(A=1)^q P_(i j)^"(dir)" (A,B) = f_j (B).
 $
-The direct information is the mutual information associated to this distribution:
+The direct information is then defined as the mutual information of this two-site model:
 $
   cal(S)^"DI"_(i j) = sum_(A,B=1)^q P_(i j)^"(dir)" (A,B)ln (P_(i j)^"(dir)" (A,B) )/ (f_i (A) f_j (B))
 $
-The top-scoring pairs are predicted to be structural contacts.
+Residue pairs with the highest DI scores are predicted to be structural contacts.
 
 === Limitations
 While mfDCA represented a breakthrough in usability of DCA, the simplifying approximations impose limitations on the model:
 - Weak coupling assumptions: the small-coupling expasion assumes nearly linear correlations, which can underestimate strong epistatic effects in proteins @Haldane_2019.
 - Computational scaling: the inversion of the correlation matrix scales as $cal(O)(L^3)$, which is costly for very large MSAs.
-- Pseudocount dependence: due to the algorithm's vast parameter size (in the order of $400N^2$) strong regularization is required. This makes the choice of the pseudocount $lambda$ significantly affect performance.
+- Pseudocount dependence: due to the algorithm's vast parameter size (in the order of $400N^2$) strong regularization is required. The choice of pseudocount $lambda$ can significantly affect performance.
 
 == Pseudo-likelihood Maximization DCA (2013)
 While mfDCA provided a fast approximation, it relied on strong assumptions. Pseudolikelihood maximization (plmDCA) relaxed these by fitting sitewise conditional probabilities directly. Concretely, the inverse Potts problem on an alignment of length $L$ becomes $L$ coupled multinomial logistic regressions rather than a single optimization over the global partition function.
 
 === Method
-We retain the Potts parametrization of fields and couplings introduced in @potts. Similar to mfDCA, sequences are reweighted using $w_m$ defined in @weight and the effective sample size $M_"eff"$ defined in @M_eff.
+For plmDCA, the Potts parametrization of fields and couplings introduced in @potts is retained. Similar to mfDCA, sequences are reweighted using $w_m$ defined in @weight and the effective sample size $M_"eff"$ defined in @M_eff.
 
-*Method Setup*
-
+*Coupling Inference: Pseudolikelihood Maximization* \
 The pivotal idea is to optimize pseudolikelihoods. For site $r$, the conditional distribution given all other sites $sigma_(\\ r)$ is
 $
   P(sigma_r = A | sigma_(\\ r)) = (exp(h_r (A)+sum_(i!=r)J_(r i)(A, sigma_i))) / (sum_(B=1)^q exp(h_r (B)+sum_(i!=r)J_(r i)(B, sigma_i)))).
@@ -262,58 +258,48 @@ and minimize
 $
   {h^"PLM", J^"PLM"} = arg min_(h, J) {cal(l)_"pseudo" (h, J) + R_(cal(l)_2) (h, J)}
 $
-The $cal(l)_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters. Each $g_r$ is precisely the loss of a multinomial logistic regression (softmax): classes are the $q$ states of $sigma_r$; features are one-hot encodings of ${sigma_i}_(i!=r)$ with $(L-1)(q-1)$ degrees of freedom after dropping a reference state. Hence (asymmetric) plmDCA is implemented as $L$ independent, weighted softmax problems with $cal(L)_2$ penalty (e.g. solved with L-BFGS or mini-batch SGD). Two variants are used in practice: asymmetric PLM, which fits each independently and then symmetrizes averaging:
+The $ell_2$ penalty fixes the gauge implicitly by selecting a unique representative among gauge-equivalent parameters. Each $g_r$ is precisely the loss of a multinomial logistic regression (softmax): classes are the $q$ states of $sigma_r$; features are one-hot encodings of ${sigma_i}_(i!=r)$ with $(L-1)(q-1)$ degrees of freedom after dropping a reference state. Hence (asymmetric) plmDCA is implemented as $L$ independent, weighted softmax problems with $ell_2$ penalty. Two variants are used in practice: asymmetric PLM, which fits each independently and then symmetrizes averaging:
 $
   hat(J)_(i j) <- 1/2(J_(i j)^((i))+J_(i j)^((j)))
 $
 and symmetric (joint) PLM, which minimizes $cal(L)_"pseudo"$ over all parameters at once. Results are typically similar, but optimization in the symmetric variant can be heavier.
 
-*Pair Scoring* \
-For pair scoring, plmDCA avoids the previously defined Direct Information (DI) as it would introduce a regularization parameter for the pseudocounts, on top of the existing $lambda_h "and" lambda_J$. Instead it considers the Frobenius Norm (FN)
+*Pair Scoring: Corrected Frobenius Norm* \
+For pair scoring, plmDCA avoids the previously defined Direct Information (DI) as it would introduce a pseudocount regularization parameter, on top of the existing $lambda_h "and" lambda_J$. Instead, a new score is defined starting from the Frobenius Norm (FN)
 $
-  norm(J_(i j))_2 = sqrt(sum_(k,l=1)^q J_(i j)(k,l)^2).
+  norm(J_(i j))_2 = sqrt(sum_(A,B=1)^q J_(i j)(A,B)^2).
 $
 Unlike the DI score, the FN is not independent of gauge choice so a direct decision must be made. As noted in @weigt2009, the zero-sum gauge minimizes the FN, making it the most appropriate gauge choice available. The procedure is hence 
 (i) convert to zero-sum gauge $J'_(i j)$: 
 $
-  J'_(i j) (k, l) = J_(i j) (k, l) - J_(i j) (dot, l) - J_(i j) (k, dot) + J_(i j) (dot, dot),
+  J'_(i j) (A, B) = J_(i j) (A, B) - J_(i j) (dot, B) - J_(i j) (A, dot) + J_(i j) (dot, dot),
 $ <jprime>
 where "$dot$" denotes a simple average over the $q$ states at that position; (ii) compute the Frobenius norm 
 $
-  cal(S)_(i j)^"FN" = norm(J'_(i j))_2 = sqrt(sum_(k,l=1)^q (J'_(i j)(k,l))^2);
+  cal(S)_(i j)^"FN" = norm(J'_(i j))_2 = sqrt(sum_(A,B=1)^q (J'_(i j)(A,B))^2);
 $
 (iii) apply Average Product Correction (APC) adjusted from its use in @jones2012psicov to reduce phylogenetic bias,
 $
-  cal(S)_(i j)^"CN" = cal(S)_(i j)^"FN" - (cal(S)_(i dot)^"FN" cal(S)_(dot j)^"FN") / cal(S)_(dot dot)^"FN",
+  cal(S)_(i j)^"CFN" = cal(S)_(i j)^"FN" - (cal(S)_(i dot)^"FN" cal(S)_(dot j)^"FN") / cal(S)_(dot dot)^"FN",
 $
 where $cal(S)_(i dot)^"FN"$ and $cal(S)_(dot j)^"FN"$ are row/column means and $cal(S)_(dot dot)^"FN"$ is the grand mean. 
 Residue pairs $(i, j)$ are ranked by $cal(S)_(i j)^"CN"$ to predict structural contacts. 
 === Limitations
-Despite its practical impact, plmDCA remains sensitive to sampling: accurate contact recovery still requires large $M_"eff"$, and sparse or biased MSAs degrade estimates. Phylogenetic and positional bias persist (reweighting and APC help but do not eliminate them), which can inflate false positives.
+Despite its impact for practical applications, plmDCA remains sensitive to sampling: accurate contact recovery still requires large $M_"eff"$, and sparse or biased MSAs degrade estimates. Phylogenetic and positional bias persist (reweighting and APC help but do not eliminate them), which can inflate false positives.
 
 
 === Fast plmDCA (2014)
-To make plmDCA deployable at scale, two of the original authors and a third collaborator revisited the optimization choices of the method @fastplmDCA. In this second version, the asymmetric variant is used: $L$ independent, weighted softmax regressions are computed, one per site, and the final couplings are symmetrized by averaging, 
+To make plmDCA deployable at scale, two of the original authors and a collaborator revisited its optimization strategy @fastplmDCA. The revised method adopts an asymmetric variant, instead of optimizing a single global pseudolikelihood, it solves $L$ independent, weighted softmax regressions--one per site. The resulting couplings are then symmetrized by averaging, 
 $
   J_(i j) = 1/2 (J_(i j)^((i))+J_(i j)^((j))).
 $
-This decomposition reduces per-solve dimensionality and, crucially, enables trivial parallelization across CPU cores or nodes, which is the primary source of the runtime gain. Since each $J_(i j)$ is regularized twice (once in the regression for $i$ and once for $j$), the coupling penalty parameter must be halved relative to the symmetric formulation. Before averaging, the two independently inferred coupling blocks are each shifted into the zero-sum gauge to ensure consistency. For scoring, the method adopts the Corrected Frobenius Norm (CFN): first compute the Frobenius norm of $hat(J)_(i j)$ excluding the gap state,
-$
-  "FN"_(i j) = sqrt(sum_(k,l != "gap") hat(J)_(i j) (k, l)^2),
-$
-then apply the Average Product Correction
-$
-  cal(S)^"CFN"_(i j) = "FN"_(i j) - ("FN"_(i :) "FN"_(: j)) / "FN"_(: :)
-$
-
-The combination of asymmetric regression and symmetrization yields similar contact accuracy as the original plmDCA, but at a fraction of the runtime, making large protein families and long sequences tractable in practice.
+This decomposition reduces the dimensionality of each optimization problem and, crucially, enables trivial parallelization across CPU cores or nodes--the primary source of runtime gain. Since each $J_(i j)$ is regularized twice (once in the regression for $i$ and once for $j$), the coupling penalty parameter must be halved relative to the symmetric formulation. Before averaging, the two coupling blocks are shifted into the zero-sum gauge to ensure consistency. For contact prediction, the method adopts the Corrected Frobenius Norm (CFN) scoring function defined above. The combination of asymmetric regression and symmetrization achieves accuracy comparable to the original plmDCA, but at a fraction of the runtime, making large protein families and long sequences tractable in practice.
 
 == Boltzmann Machine DCA (2018)
-In mfDCA accuracy was traded for speed via the small-coupling inversion; in plmDCA, a product of sitewise conditionals was optimized, avoiding the global partition function. bmDCA@bmDCA instead proposes a solution closer to the statistical ideal: fitting the full Potts model by maximizing the true likelihood, using Monte Carlo Markov Chains to estimate intractable expectations. Improving on this, adabmDCA@adabmDCA introduces an adaptive procedure to keep sampling reliable and efficient. The result is a generative model that (by construction) matches the empirical one- and two-site statistics of the reweighted MSA.
+In mfDCA accuracy was traded for speed via the small-coupling inversion; in plmDCA, a product of sitewise conditionals was optimized, avoiding the global partition function. bmDCA@bmDCA instead proposes a solution closer to the statistical ideal: fitting the full Potts model by maximizing the true likelihood, using Monte Carlo Markov Chains to estimate intractable expectations. The result is a generative model that (by construction) matches the empirical one- and two-site statistics of the reweighted MSA.
 
 === Method
-bmDCA aims to infer the full Potts model defined as @potts that reproduces the single- and pair-wise frequencies of the MSA. \ 
-The training procedure follows the classical Boltzmann machine learning algorithm:
+bmDCA aims to infer the full Potts model defined as @potts that reproduces the single- and pair-wise frequencies of the MSA. The training procedure follows the classical Boltzmann machine learning algorithm:
 + Sampling step. For current parameters {J, h}, estimate model frequencies $p_i, p_(i j)$ by MCMC
 + Update step. Adjust parameters when the estimated frequencies deviate from empirical ones: $Delta h_i prop f_i - p_i , quad  Delta J_(i j) prop f_(i j) - p_(i j)$
 + Iterate until empirical and model moments match within tolerance.
@@ -326,24 +312,15 @@ Regularization is imposed to stabilize the fit and avoid overfitting.
 - Scaling: While bmDCA is theoretically optimal (full likelihood optimization), it is limited in practice to small systems where large-scale computation is feasible.
 
 === adabmDCA (2021)
-adabmDCA revisits the same goal of fitting the full Potts by likelihood maximization, but introduces an adaptive MCMC procedure to make the approach more practical. Instead of relying on fixed sampling parameters, it dynamically tunes equilibration, waiting times, and chain persistance. adabmDCA pushes the bmDCA approach closer to practical usability, at the cost of a more complex implementation and still significant compute requirements. 
+adabmDCA @adabmDCA the same goal of fitting the full Potts by likelihood maximization, but introduces an adaptive MCMC procedure to make the approach more practical. Instead of relying on fixed sampling parameters, it dynamically tunes equilibration, waiting times, and chain persistance. adabmDCA pushes the bmDCA approach closer to practical usability, at the cost of a more complex implementation and still significant compute requirements. 
 
-*Method* \
-Let the MSA have length L, and M sequences $bold(sigma) = (sigma_1, ..., sigma_L)$. The maximum-entropy distribution that reproduces chosen moments is the Potts model defined in @potts. To reduce phylogenetic redundancy, assign each sequence a weight $w_m$ as in @weight. Empirical frequencies are reweighted and smoothed with pseudocount $lambda$ as
+*Coupling Infernce: Full Likelihood and Moment Matching* \
+The maximum-entropy distribution that reproduces chosen moments is the Potts model defined in @potts. To reduce phylogenetic redundancy, each sequence is assigned a weight $w_m$ as in @weight. Reweighted empirical frequencies, smoothed pseudocount $lambda$ are defined as
 $
   f_i (A) = (1 - lambda) f_i^"data" (A) + lambda / q, quad f_(i j)(A,B) &= (1- lambda)f_(i j)^"data" (A, B)+ lambda/q^2
 \
   f_i^"data" (A) = 1/M_"eff" sum_m w_m delta(A, sigma_i^((m))), quad f_(i j)^"data" (A, B) &= 1/M_"eff" sum_m w_m delta(A, sigma_i^((m))) (B, sigma_j^((m)))
 $
-
-A practical starting point for the system is the profile model, an independent-site Potts model where the first empirical moments are matched by means of the fields,
-$
-  h_i^"prof" (A) = log f_i (A) + "const",
-$ 
-but all couplings are set to zero $ J equiv 0$. In addition, zero or user-provided initial parameters can also work.
-
-*Likelihood and moment matching*
-
 The average log-likelihood of the MSA under $P(dot|J,h)$ is
 $
   cal(L)(J, h) = 1/M sum_(m=1)^M [sum_i h_i (sigma_i^((m))) + sum_(i<j) J_(i j) (sigma_i^((m)), sigma_j^((m)))]-log Z(J, h).
@@ -352,56 +329,43 @@ As an exponential-family model, $cal(L)$ is concave in the natural parameters, s
 $
   (partial cal(L)) / (partial h_i (A)) = f_i (A) - p_i (A), quad (partial cal(L)) / (partial J_(i j) (A,B)) = f_(i j) (A,B) - p_(i j) (A, B),
 $
-where $p_i$ and $p_(i j)$ are model marginals under current $(J, h)$. Hence the update
+where $p_i$ and $p_(i j)$ are model marginals under current $(J, h)$. Hence the updates
 $
   h_i^(t+1)(A) <- h_i^t (A) + eta_h [f_i (A) - p_i^((t))(A)], \
   J_(i j)^(t+1)(A, B) <- J_(i j)^t (A, B) + eta_J [f_(i j) (A, B) - p_(i j)^((t))(A, B)].
 $
-drives the model toward exact moment matching f = p.
-The obstacle is that $p_i$ and $p_(i j)$ are not analytically computable at scale; adabmDCA estimates them by MCMC at each epoch.
+drive the model toward the maximum likelihood-solution where $f=p$.
+The obstacle is that the marginals $p_i$ and $p_(i j)$ are not analytically computable at scale; adabmDCA estimates them by MCMC at each epoch.
 
-*Estimating model expectations via adaptive MCMC*
-
+*Estimating Model Expectations via Adaptive MCMC* \
 At training epoch $t$, run $N_s$ independent Markov chains using Metropolis-Hastings @Metropolis1953 @mh-algorithm (Gibbs sampling strategy may also be used @gibbs-algorithm), each producing $N_c$ samples after an equilibration period $T_"eq"$ and with an inter-sample waiting time $T_"wait"$. The Monte Carlo estimators are
 $
   p_i^((t)) (A) = 1/(N_s N_c) sum_(m=1)^(N_s N_c) delta(A, sigma_i^((m))(t)), \ p_(i j)^((t)) (A, B) = 1/(N_s N_c) sum_(nu=1)^(N_s N_c) delta(A, sigma_i^((m))(t)) delta(B, sigma_j^((m))(t)).
 $
 Chains may be transient, reinitialized every epoch, or persistent, initialized only at the first epoch. Equilibration is often sped up through persistence of chains. For more details on the adaptive scheme, refer to @app3.
 
-*Convergence and quality control*
-
 A practical convergence proxy is the difference between the empirical and the model two-site connected correlations:
 $
   epsilon_c = max_(i,j,a,B) abs(c_(i j)^"model" (A,B)-c_(i j)^"emp" (A,B)) quad"where" \ quad c_(i j)^"model" = p_(i j)-p_i p_j, quad c_(i j)^"emp" = f_(i j)-f_i f_j
 $
-with a target $epsilon_c approx 10^-2$ In addition to this, some other commonly used diagnostics is the Pearson correlation between $c^"model"$ and $c^"emp"$, one- and two-site fitting errors, and optionally, a third connected correlation on a subset of triples is used to assess generative fidelity beyond pairwise constraints.
+with a target $epsilon_c approx 10^-2$ In addition to this, some other commonly used diagnostics is the Pearson correlation between $c^"model"$ and $c^"emp"$, one- and two-site fitting errors, and optionally, a third connected correlation on a subset of triples is used to assess generative fidelity beyond pairwise constraints. 
 
-*Priors and sparsity*
-
-A fully connected Potts model has $~ (L(L-1))/2 q^2 + L q$, meaning a number in the order of $10^7$-$10^9$ parameters for a realistic $L$ @adabmDCA. Due to the finite sample size of MSAs, they rarely contain enough independent information to estimate all of them robustly. Not controlling this uncertainty could lead to overfitting, high variance or instability, and bad conditioning in the model. To address these issues, adabmDCA employs two complementary strategies.
-First, we can place a prior on $P(J, h)$ and maximize the posterior, equivalent to adding penalties to the objective. The two standard choices are the $cal(l)_1$ and $cal(l)_2$ priors:
+*Regularization* \
+A fully connected Potts model cotains $~ (L(L-1))/2 q^2 + L q$ parameters, in the order of $10^7$-$10^9$ for realistic $L$. Due to the finite sample size of MSAs, they rarely contain enough independent information to estimate all of the parameters robustly. Not controlling this uncertainty could lead to overfitting, high variance or instability, and bad conditioning in the model. adabmDCA addresses this with two strategies: regularization and sparsity priors.
+First, parameter penalties are added via $ell_1$ and $ell_2$ norms:
 $
   R_(cal(l)_1) (J, h) = theta_(1, h) sum_i norm(h_i)_1 + theta_(1, J) sum_(i<j) norm(J_(i j))_1 \
   R_(cal(l)_2) (J, h) = theta_(2, h) sum_i norm(h_i)_2^2 + theta_(2, J) sum_(i<j)norm(J_(i j))_2^2
 $
-Under $cal(l)_2$, the gradients are shrunk toward zero:
-$
-  partial / (partial h_i (A)) : f_i (A) - p_i (A) - theta_(2,h) h_i (A), \ partial / (partial J_(i j) (A,B)) : f_(i j) (A, B) - p_(i j) (A, B) - theta_(2,h) J_(i j) (A,B). 
-$
-Under $cal(l)_1$, they include subgradient terms that promote exact zeros.
-$
-  partial / (partial h_i (A)) : f_i (A) - p_i (A) - theta_(1,h) "sign"(h_i (A)), \ partial / (partial J_(i j) (A,B)) : f_(i j) (A, B) - p_(i j) (A, B) - theta_(1,h) "sign"(J_(i j) (A,B)). 
-$
-$cal(l)_2$ reduces variance and improves conditioning by smoothly shrinking all parameters. It selects a unique gauge and tends to preserve the relative ordering of strong couplings. On the other hand, $cal(l)_1$ induces sparsity by zeroing weak parameters, also reducing overfitting, though at a cost of biasing small effects downward. Generally, in stochastic settings, elastic-net is used (a combination of both parameters), that stabilizes training near zero. In addition, a separate parameter is used for fields and couplings, typically regularizing $J$ more strongly than $h$.
+$ell_2$ reduces variance and improves conditioning by smoothly shrinking all parameters. It selects a unique gauge and tends to preserve the relative ordering of strong couplings. On the other hand, $ell_1$ induces sparsity by zeroing weak parameters, also reducing overfitting, though at a cost of biasing small effects downward. Generally, in stochastic settings, elastic-net is used (a combination of both parameters), that stabilizes training near zero. In addition, a separate parameter is used for fields and couplings, typically regularizing $J$ more strongly than $h$.
 
-The second method is introducing sparsity via pruning or decimation. The reason for this is that true contact maps in nature are indeed sparse; most residue pairs are not in direct physical contact. Encoding this structural prior can reduces variance and speed up learning. There are two approaches:
+Second, structural sparsity is imposed, reflecting that only a small fraction of residue pairs form contacts. Encoding a structural prior can reduce variance and speed up learning. There are two approaches:
 + A priori topology. Reduce the number of parameters by starting from a restricted edge set, for example pairs with high MI, and learn only those $J_(i j)$, omitting the rest.
-+ Information-based decimation. In this approach, start dense and iteratively remove the least informative couplings until target sparsity. This can be done by comparing the KL divergence for a candidate element. This directly controls overfitting by only keeping the parameters that actually affect the model's predictions.
++ Information-based decimation. Starting dense and iteratively removing the least informative couplings until target sparsity. This directly controls overfitting by only keeping the parameters that actually affect the model's predictions.
 In short, pruning and decimation prevent overfitting by removing parameters that don't materially alter the model, and have the added benefit of aligning with the biological prior of contact sparsity.
 
-
 == Autoregressive Network DCA
-Building on the pseudolikelihood maximization of plmDCA, and Boltzmann-machine parametrization of bmDCA, arDCA was introduced as a faster and more efficient alternative. While plmDCA is limited in scope and bmDCA suffers from slow MCMC sampling, reformulating the problem as an autoregressive network provides some key improvements. The key idea is to decompose the joint sequence probability distribution its conditionals, thereby turning it into a supervised learning task. In this way, arDCA emerges as a powerful model for extracting structural and functional information from the rapidly growing protein databases.
+Building on the pseudolikelihood maximization of plmDCA, and Boltzmann-machine parametrization of bmDCA, arDCA was introduced as a faster and more efficient alternative. While plmDCA is limited in scope and bmDCA suffers from slow MCMC sampling, reformulating the problem as an autoregressive network provides some key improvements. The idea is to decompose the joint sequence probability distribution into its conditionals, thereby turning the problem of inference into a supervised learning task. In this way, arDCA emerges as a powerful model for extracting structural and functional information from the rapidly growing protein databases.
 
 === Method
 In arDCA, the exponential-family MaxEnt distribution underlying previous DCA methods is factorized into conditional probabilities, predicting each residue from its predecessors. This follows directly from the chain rule of probability:
@@ -410,11 +374,11 @@ $
 $
 Inspired by approaches in classical @wu2019solving and quantum @sharir2020deep statistical mechanics, the conditional distribution is parametrized as:
 $
-  P(a_i | a_(i-1), ..., a_1) = exp(h_i (a_i)+sum_(j=1)^(i-1) J_(i j)(a_i, a_j)) / (sum_a_i exp(h_i (a_i)+sum_(j=1)^(i-1) J_(i j)(a_i, a_j)))
+  P(sigma_i | sigma_(i-1), ..., sigma_1) = exp(h_i (sigma_i)+sum_(j=1)^(i-1) J_(i j)(sigma_i, sigma_j)) / (sum_sigma_i exp(h_i (sigma_i)+sum_(j=1)^(i-1) J_(i j)(sigma_i, sigma_j)))
 $<ardca>
-This is a multiclass softmax regression @hastie2009elements, generalizing logistic regression to multiple residue states. The model is deinfed by site-specific fields $h_i (a)$ and directed couplings $J_(i j) (a,b)$, and was therefore termed arDCA. For comparison, the authors also introduced a simpler profile model (independent-site model), which only includes field terms. Its joint probability factorizes across sites,
+This is a multiclass softmax regression @hastie2009elements, generalizing logistic regression to multiple residue states. The model is defined by site-specific fields $h_i (A)$ and directed couplings $J_(i j) (A,B)$, and was therefore termed arDCA. For comparison, the authors also introduced a simpler profile model (independent-site model), which only includes field terms. Its joint probability factorizes across sites,
 $
-P(a_1,...,a_L) = product_(i=1...L)f_i (a_i)
+P(sigma_1,...,sigma_L) = product_(i=1...L)f_i (sigma_i)
 $.
 making it a useful baseline.
 
@@ -427,10 +391,10 @@ The inference of the parameters is done through likelihood maximization. Followi
 $
   {J^*, h^*} &= arg max_{J, h} P(cal(M)|{J, h}) \
   &= arg max_{J, h} log P(cal(M)|{J, h}) \
-  &= arg max_{J, h} sum_(m=1)^M log product_(i=1)^L P(a_i^m|a_(i-1)^m,...,a_1^m) \
-  &= arg max_{J, h} sum_(m=1)^M sum_(i=1)^L log P(a_i^m|a_(i-1)^m,...,a_1^m)
+  &= arg max_{J, h} sum_(m=1)^M log product_(i=1)^L P(sigma_i^m|sigma_(i-1)^m,...,sigma_1^m) \
+  &= arg max_{J, h} sum_(m=1)^M sum_(i=1)^L log P(sigma_i^m|sigma_(i-1)^m,...,sigma_1^m)
 $ <lhmax>
-Each $h_i (a)$ and $J_(i j)(a,b)$ is present in only one conditional probability $P(a_i|a_(i-1),...,a_1)$, thus we can maximize each conditional probability independently in @lhmax:
+Each $h_i (a)$ and $J_(i j)(a,b)$ is present in only one conditional probability $P(sigma_i|a_(i-1),...,a_1)$, thus we can maximize each conditional probability independently in @lhmax:
 $
   {J_(i j)^*, h_i^*} = arg max_{J_(i j), h_i} sum_(m=1)^M [h_i (a_i^m) + sum_(j=1)^(i-1) J_(i j) (a_i^m, a_j^m) - log z_i (a_(i-1)^m, ..., a_1^m)]
 $
@@ -601,8 +565,7 @@ During training of the  model, we implemented an optimization loop with AdamW op
 
 
 == Generative Model Quality
-The final test for the models is their ability to generate accurate sequences. For this we can use AlphaFold's plDDT @AlphaFold_pLDDT, 
-https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb
+The final test for the models is their ability to generate accurate sequences. For this we can use AlphaFold's plDDT @AlphaFold_pLDDT.
 
 
 == Limitations and Insights
