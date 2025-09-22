@@ -41,7 +41,7 @@
 \
 Vorrei innanzitutto ringraziare i miei nonni per l'amore e supporto durante questi miei tre anni a Milano. \
 
-Grazie anche a i miei genitori per le opportunità che mi hanno sempre dato, per il sostegno e la fiducia. Un grazie speciale alle mie sorelle Carlotta e Martina le cui chiamate mi hanno permesso di fare pause divertenti durante la stesura di questa tesi. Grazie di cuore a Federica che mi ha supportato e sopportato, grazie a Tebe il mio collega e consigliere e a Stefano, George, Federico, Ulysse, per avere letto, o almeno fatto finta di leggere, le mie bozze.
+Grazie anche a i miei genitori per le opportunità che mi hanno sempre dato, per il sostegno e la fiducia. Un grazie speciale alle mie sorelle Carlotta e Martina le cui chiamate mi hanno permesso di fare pause divertenti durante la stesura di questa tesi. Grazie di cuore a Federica che mi ha supportato e sopportato, grazie a Tebe il mio collega e consigliere e a Stefano, George, Jas, Federico, Ulysse, per avere letto, o almeno fatto finta di leggere, le mie bozze.
 
 Vorrei infine dedicare questo lavoro alla mia Nonna Nadia che ha sempre fatto l'impossibile per me. Nonna, ti voglio tanto bene.
 
