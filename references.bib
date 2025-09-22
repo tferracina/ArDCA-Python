@@ -474,3 +474,16 @@ doi = {10.3390/biom14121531}
   biburl       = {https://dblp.org/rec/journals/corr/abs-1711-05101.bib},
   bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
+
+@article {Caredda2024.02.06.579080,
+	author = {Caredda, Francesco and Pagnani, Andrea},
+	title = {Direct Coupling Analysis and the Attention Mechanism},
+	elocation-id = {2024.02.06.579080},
+	year = {2024},
+	doi = {10.1101/2024.02.06.579080},
+	publisher = {Cold Spring Harbor Laboratory},
+	abstract = {Proteins serve as the foundation for nearly all biological functions within cells, encompassing roles in transport, signaling, enzymatic activity, and more. Their functionalities hinge significantly on their intricate three-dimensional structures, often posing challenges in terms of difficulty, time, and expense for accurate determination. The introduction of AlphaFold 2 marked a groundbreaking solution to the enduring challenge of predicting a protein{\textquoteright}s tertiary structure from its amino acid sequence. However, the inherent complexity of AlphaFold{\textquoteright}s architecture presents obstacles in deciphering its learning process and understanding the decision-making that ultimately shapes the protein{\textquoteright}s final structure.In this study, we introduce a shallow, unsupervised model designed to understand the selfattention layer within the Evoformer block of AlphaFold. We establish a method based on Direct Coupling Analysis (DCA), wherein the interaction tensor undergoes decomposition, leveraging the same structure employed in Transformer architectures. The model{\textquoteright}s parameters, notably fewer than those in standard DCA, are interpretable through an examination of the resulting attention matrices. These matrices enable the extraction of contact information, subsequently utilized for constructing the contact map of a protein family. Additionally, the self-attention decomposition in the DCA Hamiltonian form adopted here facilitates the definition of multifamily learning architecture, enabling the inference of parameter sets shared across diverse protein families. Finally, an autoregressive generative version of the model is implemented, capable of efficiently generating new proteins in silico. This generative model reproduces the summary statistics of the original protein family while concurrently inferring direct contacts in the tertiary structure of the protein. The effectiveness of our Attention-Based DCA architecture is evaluated using Multiple Sequence Alignments (MSAs) of varying lengths and depths, with structural data sourced from the Pfam database.Competing Interest StatementThe authors have declared no competing interest.},
+	URL = {https://www.biorxiv.org/content/early/2024/02/08/2024.02.06.579080},
+	eprint = {https://www.biorxiv.org/content/early/2024/02/08/2024.02.06.579080.full.pdf},
+	journal = {bioRxiv}
+}
