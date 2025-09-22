@@ -3,8 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import Optional, Tuple, Union
-from tqdm import tqdm
+from typing import Optional, Tuple
 
 from classes import *
 from utils import *
@@ -73,7 +72,7 @@ class ArDCA(nn.Module):
         gold_logp = logp[batch_idx[:, None], pos_idx[None, :], X_idx]  # (M,L)
 
         # 3. weighted negative log likelihood
-        data_nll = -(W[:, None] * gold_logp).sum() / W.sum()
+        data_nll = -(W[:, None] * gold_logp).sum() / (W.sum() * L)
 
         # 4. regularization
         regJ = (self.J.pow(2) * self.J_mask).sum()
@@ -254,7 +253,7 @@ def train_ardca(model: ArDCA,
                     lambda_h=model_params.lambda_h
                 )
                 loss.backward()
-                return loss.detach()
+                return loss
             
             # L-BFGS step
             optimizer.step(closure)
@@ -282,13 +281,18 @@ def train_ardca(model: ArDCA,
         
         model.clamp_unused()
         
+        avg_train_nll = info['nll'].item() / model.L
+        perplexity = np.exp(avg_train_nll)
+
         # Record training metrics
         history['train_loss'].append(loss.item())
-        history['train_nll'].append(info['nll'].item())
+        history['train_nll'].append(avg_train_nll)
         
         # Validation
         if epoch % eval_interval == 0 or epoch == model_params.max_iters - 1:
-            print(f"Epoch {epoch}: Train Loss={loss.item():.6f}, Train NLL={info['nll'].item():.6f}")
+            print(f"Epoch {epoch}: Train Loss={loss.item():.6f}, "
+                  f"Train NLL/pos={avg_train_nll:.6f}, "
+                  f"Perplexity={perplexity:.4f}")
             
             if val_seqs is not None:
                 model.eval()
@@ -303,7 +307,8 @@ def train_ardca(model: ArDCA,
                     val_metrics = model.evaluate(val_X_oh, val_seqs, val_weights)
                 
                 history['val_loss'].append(val_loss.item())
-                history['val_nll'].append(val_info['nll'].item())
+                avg_val_nll = val_info['nll'].item() / model.L
+                history['val_nll'].append(avg_val_nll)
                 history['val_perplexity'].append(val_metrics['perplexity'])
                 print(f"         Val Loss={val_loss.item():.6f}, Val NLL={val_info['nll'].item():.6f}, Perplexity={val_metrics['perplexity']:.4f}")
                 

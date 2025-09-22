@@ -282,6 +282,7 @@ def plot_training_behavior(histories, metric="train_loss"):
     plt.title(f"{metric.replace('_', ' ').capitalize()} Over Epochs")
     plt.legend()
     plt.grid()
+    plt.savefig(f"out/{metric}")
     plt.show()
 
 
@@ -372,7 +373,6 @@ def compute_three_site_correlations(X_idx: np.ndarray, W: np.ndarray, M_eff, q: 
         triplet_indices: Array of shape (n_triplets, 3) with (i,j,k) indices
     """
     M, L = X_idx.shape
-    M_eff = W.sum()
     
     # Generate all possible triplets or sample if too many
     all_triplets = list(combinations(range(L), 3))
